@@ -54,9 +54,9 @@ export const ConstellationHeader = ({
         title="Knowledge Constellation"
         subtitle="Your learning universe — explore mastered skills, active abilities, prerequisites and your next path to mastery."
         stats={[
-          { label: '34 Skills', subtext: 'Discovered', icon: Network, color: '#38bdf8', iconBg: 'rgba(56, 189, 248, 0.25)' },
-          { label: 'Level 4', subtext: 'Mastery Rank', icon: Sparkles, color: '#c084fc', iconBg: 'rgba(192, 132, 252, 0.25)' },
-          { label: '3', subtext: 'Learning Goals', isPill: true }
+          { label: 'Interactive', subtext: 'Constellation Graph', icon: Network, color: '#38bdf8', iconBg: 'rgba(56, 189, 248, 0.25)' },
+          { label: `${categories?.length || 4} Domains`, subtext: 'Knowledge Clusters', icon: Sparkles, color: '#c084fc', iconBg: 'rgba(192, 132, 252, 0.25)' },
+          { label: 'Live Graph', subtext: 'Prerequisite Tree', icon: Cpu, color: '#10b981', iconBg: 'rgba(16, 185, 129, 0.25)' }
         ]}
       />
 

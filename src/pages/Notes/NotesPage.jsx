@@ -156,11 +156,15 @@ export const NotesPage = () => {
 
   // Determine Learner Context Text
   const getLearnerContextBadge = () => {
-    const learnerType = user?.learnerType || 'SCHOOL';
-    if (learnerType === 'SCHOOL') return `🏫 Class 10 CBSE • ${subjects.length} Active Subjects`;
-    if (learnerType === 'COLLEGE') return `🎓 B.Tech CSE (Sem 5) • ${subjects.length} Subjects`;
-    if (learnerType === 'EXAM') return `📝 CMAT Exam Prep Command Center`;
-    return `💻 Full Stack Skill DNA Workspace`;
+    const grade = profile?.grade || user?.grade;
+    const stream = profile?.stream || user?.stream;
+    if (grade && stream) return `${grade} ${stream} • ${subjects.length} Active Subjects`;
+    if (grade) return `${grade} • ${subjects.length} Active Subjects`;
+    const learnerType = user?.learnerType || 'STUDENT';
+    if (learnerType === 'SCHOOL') return `School Curriculum • ${subjects.length} Active Subjects`;
+    if (learnerType === 'COLLEGE') return `Higher Education • ${subjects.length} Active Subjects`;
+    if (learnerType === 'EXAM') return `Competitive Exam Prep Command Center`;
+    return `Skill DNA Workspace • ${subjects.length} Active Subjects`;
   };
 
   return (
@@ -175,7 +179,7 @@ export const NotesPage = () => {
       {/* ------------------------------------------------------------- */}
       <div style={{ marginBottom: '28px' }}>
         <EduNovaHeroBanner
-          badge={`🏫 ${getLearnerContextBadge()}`}
+          badge={`📚 ${getLearnerContextBadge()}`}
           title="Smart Notes & Knowledge Workspace"
           subtitle="Capture, organize, and turn what you learn into long-term knowledge with Sage AI."
           actions={

@@ -133,6 +133,14 @@ const updateUserRole = async (userId, newRole, adminId) => {
     }
   }
 
+  // Privileged Role Security Check: Assigning ADMIN role requires verified email
+  if (newRole === 'ADMIN' && !user.isEmailVerified) {
+    throw {
+      status: 400,
+      message: 'Target user must possess a verified email before being granted privileged administrator access.',
+    };
+  }
+
   const previousRole = user.role;
 
   const updatedUser = await prisma.$transaction(async (tx) => {

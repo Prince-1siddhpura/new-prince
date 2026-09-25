@@ -112,9 +112,11 @@ router.post('/student-link-code', requireAuth, requireRole('STUDENT'), generateS
 router.post('/link-parent', requireAuth, requireRole('PARENT'), validate(linkParentSchema), linkParent);
 router.post('/unlink-parent', requireAuth, unlinkParent);
 
-// Session
+// Session & CSRF
+router.get('/csrf-token', require('../middleware/csrf').getCsrfToken);
 router.get('/me', requireAuth, getMe);
 router.post('/refresh', validate(refreshSchema), refreshToken);
 router.post('/logout', requireAuth, logout);
 
 module.exports = router;
+

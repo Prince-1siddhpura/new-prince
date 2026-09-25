@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { CommunityHero } from '../../components/community/CommunityHero';
 import { CommunityNavigationTabs } from '../../components/community/CommunityNavigationTabs';
 import { PostCardEnhanced } from '../../components/community/PostCardEnhanced';
@@ -9,38 +9,55 @@ import { ProjectsTab, ResourcesTab } from '../../components/community/ProjectsTa
 import { CommunitySidebar } from '../../components/community/CommunitySidebar';
 import { CreatePostModalEnhanced } from '../../components/community/CreatePostModalEnhanced';
 import { useLearning } from '../../context/LearningContext';
-import { noteApi, gamificationApi, aiApi } from '../../lib/apiClient';
-
-const COMMUNITY_STORAGE_KEY = 'edunova_community_posts_v1';
+import { noteApi, gamificationApi, aiApi, communityApi } from '../../lib/apiClient';
 
 export const CommunityPage = () => {
   const { earnXp } = useLearning();
 
-  const [posts, setPosts] = useState(() => {
-    try {
-      const saved = localStorage.getItem(COMMUNITY_STORAGE_KEY);
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-      }
-    } catch (e) {}
-    return [];
-  });
-
+  const [posts, setPosts] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState(null);
   const [activeTab, setActiveTab] = useState('for-you');
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [toastMessage, setToastMessage] = useState(null);
 
-  const handleAddPost = (newPost) => {
-    const updated = [newPost, ...posts];
-    setPosts(updated);
+  // Fetch real posts from PostgreSQL
+  const fetchPosts = useCallback(async () => {
+    setIsLoading(true);
+    setError(null);
     try {
-      localStorage.setItem(COMMUNITY_STORAGE_KEY, JSON.stringify(updated));
-    } catch (e) {}
-    earnXp(40, `Created Community Discussion`, 'Community');
-    gamificationApi.addXp(40, `Community Discussion: ${newPost.title.slice(0, 30)}`).catch(() => {});
+      let sort = 'latest';
+      if (activeTab === 'trending') sort = 'trending';
+      if (activeTab === 'unanswered') sort = 'unanswered';
+
+      const res = await communityApi.getPosts({ sort, limit: 20 });
+      if (res && res.data) {
+        setPosts(res.data);
+      }
+    } catch (err) {
+      console.error('[Community Fetch Error]', err);
+      setError('Unable to load community discussions. Please try again.');
+    } finally {
+      setIsLoading(false);
+    }
+  }, [activeTab]);
+
+  useEffect(() => {
+    if (['for-you', 'trending', 'latest', 'unanswered'].includes(activeTab)) {
+      fetchPosts();
+    }
+  }, [activeTab, fetchPosts]);
+
+  const handleAddPost = (newPost) => {
+    setPosts((prev) => [newPost, ...prev]);
     setToastMessage(`🎉 Discussion posted to community feed! (+40 XP)`);
     setTimeout(() => setToastMessage(null), 4500);
+  };
+
+  const handleDeletePost = (postId) => {
+    setPosts((prev) => prev.filter((p) => p.id !== postId));
+    setToastMessage(`🗑️ Discussion deleted.`);
+    setTimeout(() => setToastMessage(null), 3000);
   };
 
   const handleTurnIntoQuiz = async (post) => {
@@ -105,7 +122,26 @@ export const CommunityPage = () => {
       <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 320px', gap: '28px' }}>
         <div>
           {['for-you', 'trending', 'latest', 'unanswered'].includes(activeTab) && (
-            posts.length === 0 ? (
+            isLoading ? (
+              <div style={{ textAlign: 'center', padding: '60px 24px', color: 'var(--text-muted)' }}>
+                <div style={{ fontSize: '1.8rem', marginBottom: '12px', animation: 'spin 1s linear infinite' }}>⏳</div>
+                <p style={{ fontSize: '0.95rem' }}>Loading genuine community discussions from database...</p>
+              </div>
+            ) : error ? (
+              <div style={{
+                textAlign: 'center',
+                padding: '36px 24px',
+                background: 'rgba(239, 68, 68, 0.08)',
+                border: '1px solid rgba(239, 68, 68, 0.2)',
+                borderRadius: 'var(--radius-xl)',
+                color: '#f87171'
+              }}>
+                <p style={{ marginBottom: '12px' }}>{error}</p>
+                <button onClick={fetchPosts} className="btn-secondary" style={{ padding: '8px 16px', borderRadius: 'var(--radius-md)', cursor: 'pointer' }}>
+                  Retry
+                </button>
+              </div>
+            ) : posts.length === 0 ? (
               <div style={{
                 textAlign: 'center',
                 padding: '48px 24px',
@@ -140,6 +176,7 @@ export const CommunityPage = () => {
                     post={p}
                     onTurnIntoQuiz={handleTurnIntoQuiz}
                     onTurnIntoNotes={handleTurnIntoNotes}
+                    onDeletePost={handleDeletePost}
                   />
                 ))}
               </>

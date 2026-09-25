@@ -74,7 +74,7 @@ export const DailyMissionsCard = () => {
                   {m.title}
                 </strong>
                 <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
-                  Progress: {m.progress} / {m.target}
+                  Progress: {m.userProgress !== undefined ? m.userProgress : (m.progress || 0)}%
                 </span>
               </div>
             </div>
@@ -89,12 +89,16 @@ export const DailyMissionsCard = () => {
               ) : (
                 <Button
                   size="sm"
-                  onClick={() => {
-                    completeMission(m.id);
-                    navigate(m.actionRoute);
+                  onClick={async () => {
+                    await completeMission(m.id);
+                    if (m.actionRoute) {
+                      navigate(m.actionRoute);
+                    } else {
+                      navigate('/tasks');
+                    }
                   }}
                 >
-                  Start <ArrowRight size={14} />
+                  Complete <ArrowRight size={14} />
                 </Button>
               )}
             </div>

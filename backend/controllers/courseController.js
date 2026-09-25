@@ -105,7 +105,7 @@ const getEnrolledCourses = async (req, res) => {
  */
 const addModule = async (req, res) => {
   try {
-    const module = await courseService.addModule(req.params.id, req.body);
+    const module = await courseService.addModule(req.params.id, req.body, req.user.id);
     res.status(201).json({ success: true, data: module });
   } catch (error) {
     res.status(error.status || 500).json({ success: false, message: error.message });

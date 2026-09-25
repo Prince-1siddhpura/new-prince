@@ -19,9 +19,21 @@ const ARGON2_OPTIONS = {
 };
 
 async function bootstrapAdmin() {
-  const email = (process.argv[2] || process.env.ADMIN_INITIAL_EMAIL || 'admin@edunova.in').toLowerCase().trim();
-  const password = process.argv[3] || process.env.ADMIN_INITIAL_PASSWORD || 'AdminSecure2026!';
-  const name = process.argv[4] || 'EduNova Chief Administrator';
+  const email = (process.argv[2] || process.env.ADMIN_INITIAL_EMAIL)?.toLowerCase().trim();
+  const password = process.argv[3] || process.env.ADMIN_INITIAL_PASSWORD;
+  const name = process.argv[4] || process.env.ADMIN_INITIAL_NAME || 'EduNova Chief Administrator';
+
+  if (!email || !password) {
+    console.error('❌ Error: Administrator credentials must not be hardcoded.');
+    console.error('Usage: node scripts/bootstrap_admin.js <email> <password> [name]');
+    console.error('Or set environment variables: ADMIN_INITIAL_EMAIL and ADMIN_INITIAL_PASSWORD');
+    process.exit(1);
+  }
+
+  if (password.length < 8) {
+    console.error('❌ Error: Administrator password must be at least 8 characters.');
+    process.exit(1);
+  }
 
   console.log(`Checking administrator account for: ${email}`);
 

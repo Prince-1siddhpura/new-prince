@@ -35,20 +35,22 @@ function parseCookies(cookieHeader) {
  * @returns {Server}
  */
 function initSocket(httpServer) {
-  const allowedOrigins = [
-    process.env.FRONTEND_URL || 'http://localhost:3000',
-    'http://localhost:3001',
-    'http://localhost:3002',
-  ];
+  const allowedOrigins = Array.from(
+    new Set([
+      'http://localhost:3000',
+      'http://127.0.0.1:3000',
+      process.env.FRONTEND_URL,
+    ].filter(Boolean))
+  );
 
   io = new Server(httpServer, {
     cors: {
       origin: (origin, callback) => {
-        // Allow requests with no origin (like mobile apps, curl, postman) or matching origin
+        // Allow requests with no origin (e.g. mobile apps or curl) or matching allowed origins
         if (!origin || allowedOrigins.includes(origin) || process.env.NODE_ENV !== 'production') {
           return callback(null, true);
         }
-        return callback(new Error('Not allowed by CORS'));
+        return callback(null, false);
       },
       credentials: true,
       methods: ['GET', 'POST'],
@@ -87,8 +89,8 @@ function initSocket(httpServer) {
         return next(new Error('Authentication required: No token provided in handshake'));
       }
 
-      // Verify JWT
-      const decoded = jwt.verify(token, process.env.JWT_SECRET);
+      // Verify JWT with explicit HS256 algorithm enforcement
+      const decoded = jwt.verify(token, process.env.JWT_SECRET, { algorithms: ['HS256'] });
       if (!decoded || !decoded.id) {
         return next(new Error('Invalid token structure'));
       }

@@ -100,13 +100,21 @@ async function runTests() {
   const parentToken = parentLogin.data?.data?.token;
   console.log('7a. Parent Login/Register:', [200, 201].includes(parentLogin.status) ? '✅ Success' : '❌ Failed');
 
-  // 8b. Link parent to student via studentUsername
+  // 8a. Generate student link code
+  const codeRes = await request('/api/auth/student-link-code', 'POST', {}, {
+    Authorization: `Bearer ${studentToken}`,
+  });
+  const linkCode = codeRes.data?.data?.linkCode;
+  const studentUsername = codeRes.data?.data?.studentUsername || 'integration_student';
+
+  // 8b. Link parent to student via studentUsername & linkCode
   const linkRes = await request('/api/auth/link-parent', 'POST', {
-    studentUsername: 'arjun_patel',
+    studentUsername,
+    linkCode,
   }, {
     Authorization: `Bearer ${parentToken}`,
   });
-  console.log('8b. Parent Linking:', linkRes.status === 200 ? '✅ Linked' : '⚠️ Skipped/Failed', linkRes.data?.message);
+  console.log('8b. Parent Linking:', linkRes.status === 200 ? '✅ Linked' : '⚠️ Skipped/Failed', linkRes.data?.message || linkRes.data?.errors?.[0]?.message);
 
   // 8c. Parent view child data
   const childData = await request('/api/users/child', 'GET', null, {

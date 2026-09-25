@@ -15,7 +15,7 @@ export const AchievementHero = () => {
         stats={[
           { label: `Level ${levelInfo.level}`, subtext: `${xp} XP total`, icon: Award, color: '#f59e0b', progress: levelInfo.progressPercent },
           { label: `${streakDays} Days`, subtext: 'Daily Streak', icon: Flame, color: '#f97316' },
-          { label: '3', subtext: 'Learning Goals', isPill: true }
+          { label: `${streakShields || 0} Shields`, subtext: 'Streak Protection', icon: Shield, color: '#38bdf8' }
         ]}
       />
     </div>

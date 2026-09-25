@@ -60,13 +60,14 @@ export const removeBackground = (imageDataUrl) => {
 export const classifyUploadedImage = (fileName, dataUrl) => {
   const nameLower = (fileName || '').toLowerCase();
 
-  // Match against known educational domains
+  // Match against known educational domains (Catalog Preset Mapping)
   if (nameLower.includes('heart') || nameLower.includes('cardiac') || nameLower.includes('blood')) {
     const base = arObjectsRegistry.find(o => o.id === 'human-heart');
     return {
       name: 'Human Heart (Cardiovascular System)',
       category: 'Biology & Anatomy',
-      confidence: 0.97,
+      confidence: null,
+      confidencePercent: 'CATALOG PRESET',
       description: 'Four-chambered muscular organ that pumps oxygenated blood through systemic circulation and deoxygenated blood to the lungs.',
       topics: ['Blood Circulation', 'Cardiac Cycle', 'Heart Chambers', 'Aorta'],
       hotspots: base.hotspots
@@ -78,7 +79,8 @@ export const classifyUploadedImage = (fileName, dataUrl) => {
     return {
       name: 'Human Brain (Central Nervous System)',
       category: 'Biology & Neuroscience',
-      confidence: 0.96,
+      confidence: null,
+      confidencePercent: 'CATALOG PRESET',
       description: 'Central control organ governing cognition, memory, motor function, emotional regulation, and sensory perception.',
       topics: ['Cerebral Cortex', 'Frontal Lobe', 'Cerebellum', 'Synaptic Transmission'],
       hotspots: base.hotspots
@@ -90,7 +92,8 @@ export const classifyUploadedImage = (fileName, dataUrl) => {
     return {
       name: 'Cybernetic Engine Cylinder Assembly',
       category: 'Engineering & Mechanics',
-      confidence: 0.95,
+      confidence: null,
+      confidencePercent: 'CATALOG PRESET',
       description: 'Four-stroke internal combustion cylinder converting thermal expansion work into rotational mechanical torque.',
       topics: ['Thermodynamics', 'Four-Stroke Cycle', 'Piston Reciprocation', 'Spark Ignition'],
       hotspots: base.hotspots
@@ -102,7 +105,8 @@ export const classifyUploadedImage = (fileName, dataUrl) => {
     return {
       name: 'Quantum Atom Orbital Model',
       category: 'Physics & Quantum',
-      confidence: 0.98,
+      confidence: null,
+      confidencePercent: 'CATALOG PRESET',
       description: 'Atomic nucleus containing protons and neutrons surrounded by quantized electron probability orbitals.',
       topics: ['Subatomic Particles', 'Quantum Orbitals', 'Electromagnetism', 'Valence Shells'],
       hotspots: base.hotspots
@@ -114,23 +118,26 @@ export const classifyUploadedImage = (fileName, dataUrl) => {
     return {
       name: 'DNA Double Helix Strand',
       category: 'Biology & Genetics',
-      confidence: 0.97,
+      confidence: null,
+      confidencePercent: 'CATALOG PRESET',
       description: 'Double-stranded antiparallel polynucleotide storing genetic code bound by hydrogen base pairs.',
       topics: ['Nucleotides', 'Base Pairing', 'Genetic Code', 'Phosphodiester Backbone'],
       hotspots: base.hotspots
     };
   }
 
-  // Generic AI Classification for arbitrary photos
+  // Preset mapping for arbitrary photos
   const cleanName = fileName.replace(/\.[^/.]+$/, "").replace(/[-_]/g, " ") || 'Uploaded Educational Object';
   const capName = cleanName.charAt(0).toUpperCase() + cleanName.slice(1);
 
   return {
     name: `3D Volumetric ${capName}`,
     category: 'Spatial AR/VR Model',
-    confidence: 0.96,
-    description: `AI-detected 3D spatial object reconstructed from uploaded photo with automatic background removal, volumetric depth extrusion, and component hotspots.`,
-    topics: ['3D Volumetric Mesh', 'AI Background Removed', 'Spatial Object', 'Curriculum AR'],
+    confidence: null,
+    confidencePercent: 'CUSTOM UPLOAD',
+    description: `3D spatial canvas object created from user-uploaded image with client-side alpha background isolation and volumetric mesh plane.`,
+    topics: ['3D Volumetric Mesh', 'Spatial Object', 'Curriculum AR'],
+
     hotspots: [
       {
         id: 'hs-volumetric-core',

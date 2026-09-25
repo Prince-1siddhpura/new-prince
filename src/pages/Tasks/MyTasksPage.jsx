@@ -42,6 +42,7 @@ export const MyTasksPage = () => {
   const [summary, setSummary] = useState({ total: 0, todayTasks: 0, upcoming: 0, overdue: 0, completed: 0, important: 0 });
   const [goals, setGoals] = useState([]);
   const [insights, setInsights] = useState({});
+  const [loading, setLoading] = useState(false);
 
   // View mode
   const [activeView, setActiveView] = useState('LIST'); // 'LIST' | 'KANBAN' | 'CALENDAR' | 'TIMELINE' | 'INSIGHTS'
@@ -64,47 +65,67 @@ export const MyTasksPage = () => {
     loadTaskData();
   }, [searchQuery, selectedSubject, selectedType, selectedPriority, selectedStatus]);
 
-  const loadTaskData = () => {
-    const filters = {
-      search: searchQuery,
-      subject: selectedSubject,
-      type: selectedType,
-      priority: selectedPriority,
-      status: selectedStatus
-    };
+  const loadTaskData = async () => {
+    setLoading(true);
+    try {
+      const filters = {
+        search: searchQuery,
+        subject: selectedSubject,
+        type: selectedType,
+        priority: selectedPriority,
+        status: selectedStatus
+      };
 
-    const taskList = taskService.getTasks(filters);
-    setTasks(taskList);
-    setSummary(taskService.getSummary());
-    setGoals(taskService.getAllGoals());
-    setInsights(taskService.getInsights());
-  };
+      const [taskList, summaryData] = await Promise.all([
+        taskService.getTasks(filters),
+        taskService.getSummary()
+      ]);
 
-  const handleSaveTask = (taskData) => {
-    if (editTaskData) {
-      taskService.updateTask(editTaskData.id, taskData);
-    } else {
-      taskService.createTask(taskData);
+      setTasks(taskList || []);
+      setSummary(summaryData || { total: 0, todayTasks: 0, upcoming: 0, overdue: 0, completed: 0, important: 0 });
+      setGoals(taskService.getAllGoals());
+      setInsights(taskService.getInsights(taskList || []));
+    } catch (err) {
+      console.error('[MyTasksPage] Failed to load tasks from backend:', err);
+    } finally {
+      setLoading(false);
     }
-    setEditTaskData(null);
-    loadTaskData();
   };
 
-  const handleDeleteTask = (taskId) => {
+  const handleSaveTask = async (taskData) => {
+    try {
+      if (editTaskData) {
+        await taskService.updateTask(editTaskData.id, taskData);
+      } else {
+        await taskService.createTask(taskData);
+      }
+      setEditTaskData(null);
+      await loadTaskData();
+    } catch (err) {
+      console.error('[MyTasksPage] Save task failed:', err);
+    }
+  };
+
+  const handleEditTask = (task) => {
+    setEditTaskData(task);
+    setIsCreateModalOpen(true);
+  };
+
+  const handleDeleteTask = async (taskId) => {
     if (window.confirm('Are you sure you want to delete this task?')) {
-      taskService.deleteTask(taskId);
-      loadTaskData();
+      await taskService.deleteTask(taskId);
+      await loadTaskData();
     }
   };
 
-  const handleUpdateStatus = (taskId, newStatus) => {
-    taskService.updateTask(taskId, { status: newStatus });
-    loadTaskData();
+  const handleUpdateStatus = async (taskId, newStatus) => {
+    await taskService.updateTask(taskId, { status: newStatus });
+    await loadTaskData();
   };
 
-  const handleToggleSubtask = (taskId, subtaskId) => {
-    taskService.toggleSubtask(taskId, subtaskId);
-    loadTaskData();
+  const handleToggleSubtask = async (taskId, subtaskId) => {
+    await taskService.toggleSubtask(taskId, subtaskId);
+    await loadTaskData();
   };
 
   const handleStartFocus = (task) => {
@@ -112,18 +133,24 @@ export const MyTasksPage = () => {
     setIsFocusModalOpen(true);
   };
 
-  const handleAcceptPlan = (proposedSchedule) => {
-    proposedSchedule.forEach(slot => {
-      taskService.createTask({
-        title: slot.title,
-        subject: slot.subject,
-        type: slot.type,
-        priority: slot.priority,
-        dueDate: new Date().toISOString().split('T')[0],
-        estimatedDuration: 45
-      });
-    });
-    loadTaskData();
+  const handleAcceptPlan = async (proposedSchedule) => {
+    try {
+      await Promise.all(
+        proposedSchedule.map(slot =>
+          taskService.createTask({
+            title: slot.title,
+            subject: slot.subject,
+            type: slot.type,
+            priority: slot.priority,
+            dueDate: new Date().toISOString().split('T')[0],
+            estimatedDuration: 45
+          })
+        )
+      );
+      await loadTaskData();
+    } catch (err) {
+      console.error('[MyTasksPage] Accept plan failed:', err);
+    }
   };
 
   return (
@@ -183,7 +210,7 @@ export const MyTasksPage = () => {
             </>
           }
           stats={[
-            { label: summary.todayTasks, subtext: "Today's Tasks", icon: CheckSquare, color: '#38bdf8', iconBg: 'rgba(56, 189, 248, 0.2)' },
+            { label: summary.todayTasks || summary.today, subtext: "Today's Tasks", icon: CheckSquare, color: '#38bdf8', iconBg: 'rgba(56, 189, 248, 0.2)' },
             { label: summary.upcoming, subtext: 'Upcoming', icon: CalIcon, color: '#fbbf24', iconBg: 'rgba(251, 191, 36, 0.2)' },
             { label: summary.overdue, subtext: 'Overdue', icon: AlertTriangle, color: '#ef4444', iconBg: 'rgba(239, 68, 68, 0.2)' },
             { label: summary.completed, subtext: 'Completed', icon: CheckCircle2, color: '#10b981', iconBg: 'rgba(16, 185, 129, 0.2)' }
@@ -198,7 +225,7 @@ export const MyTasksPage = () => {
         border: isLight ? '1.5px solid rgba(200, 220, 240, 0.9)' : '1px solid rgba(255, 255, 255, 0.18)',
         padding: '16px 20px',
         borderRadius: '24px',
-        marginBottom: '28px',
+        marginBottom: '16px',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'space-between',
@@ -271,6 +298,157 @@ export const MyTasksPage = () => {
         </div>
       </div>
 
+      {/* 2.5 REAL-TIME FILTERS & CONTROL BAR */}
+      <div style={{
+        background: isLight ? 'rgba(255, 255, 255, 0.92)' : 'rgba(15, 23, 42, 0.72)',
+        backdropFilter: 'blur(28px)',
+        border: isLight ? '1.5px solid rgba(200, 220, 240, 0.9)' : '1px solid rgba(255, 255, 255, 0.16)',
+        borderRadius: '20px',
+        padding: '14px 20px',
+        marginBottom: '24px',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        flexWrap: 'wrap',
+        gap: '12px'
+      }}>
+        {/* Status Filter Pills */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+          <span style={{ fontSize: '0.8rem', fontWeight: 800, color: isLight ? '#64748b' : '#94a3b8', marginRight: '4px' }}>
+            Status:
+          </span>
+          {[
+            { id: 'ALL', label: 'All' },
+            { id: 'TODAY', label: "Today's" },
+            { id: 'UPCOMING', label: 'Upcoming' },
+            { id: 'OVERDUE', label: 'Overdue' },
+            { id: 'IN_PROGRESS', label: 'In Progress' },
+            { id: 'COMPLETED', label: 'Completed' }
+          ].map(st => {
+            const isActive = selectedStatus === st.id;
+            return (
+              <button
+                key={st.id}
+                onClick={() => setSelectedStatus(st.id)}
+                style={{
+                  padding: '6px 14px',
+                  borderRadius: '9999px',
+                  background: isActive ? (isLight ? '#0284c7' : '#38bdf8') : (isLight ? '#f1f5f9' : 'rgba(255,255,255,0.06)'),
+                  color: isActive ? '#ffffff' : (isLight ? '#475569' : '#cbd5e1'),
+                  fontSize: '0.78rem',
+                  fontWeight: 800,
+                  border: 'none',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s ease'
+                }}
+              >
+                {st.label}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Priority & Subject Dropdowns */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+          {/* Priority */}
+          <select
+            value={selectedPriority}
+            onChange={(e) => setSelectedPriority(e.target.value)}
+            style={{
+              padding: '6px 12px',
+              borderRadius: '12px',
+              background: isLight ? '#f8fafc' : 'rgba(255, 255, 255, 0.08)',
+              border: isLight ? '1px solid rgba(200, 220, 240, 0.9)' : '1px solid rgba(255, 255, 255, 0.15)',
+              color: isLight ? '#0f172a' : '#ffffff',
+              fontSize: '0.8rem',
+              fontWeight: 700,
+              cursor: 'pointer',
+              outline: 'none'
+            }}
+          >
+            <option value="ALL">All Priorities</option>
+            <option value="URGENT">✦ Urgent</option>
+            <option value="HIGH">✦ High</option>
+            <option value="MEDIUM">✦ Medium</option>
+            <option value="LOW">✦ Low</option>
+          </select>
+
+          {/* Subject Filter */}
+          <select
+            value={selectedSubject}
+            onChange={(e) => setSelectedSubject(e.target.value)}
+            style={{
+              padding: '6px 12px',
+              borderRadius: '12px',
+              background: isLight ? '#f8fafc' : 'rgba(255, 255, 255, 0.08)',
+              border: isLight ? '1px solid rgba(200, 220, 240, 0.9)' : '1px solid rgba(255, 255, 255, 0.15)',
+              color: isLight ? '#0f172a' : '#ffffff',
+              fontSize: '0.8rem',
+              fontWeight: 700,
+              cursor: 'pointer',
+              outline: 'none'
+            }}
+          >
+            <option value="">All Subjects</option>
+            <option value="Physics (Science)">Physics (Science)</option>
+            <option value="Mathematics">Mathematics</option>
+            <option value="Chemistry">Chemistry</option>
+            <option value="Database Systems">Database Systems</option>
+            <option value="Computer Science">Computer Science</option>
+            <option value="General">General</option>
+          </select>
+
+          {/* Type Filter */}
+          <select
+            value={selectedType}
+            onChange={(e) => setSelectedType(e.target.value)}
+            style={{
+              padding: '6px 12px',
+              borderRadius: '12px',
+              background: isLight ? '#f8fafc' : 'rgba(255, 255, 255, 0.08)',
+              border: isLight ? '1px solid rgba(200, 220, 240, 0.9)' : '1px solid rgba(255, 255, 255, 0.15)',
+              color: isLight ? '#0f172a' : '#ffffff',
+              fontSize: '0.8rem',
+              fontWeight: 700,
+              cursor: 'pointer',
+              outline: 'none'
+            }}
+          >
+            <option value="ALL">All Types</option>
+            <option value="Study">Study</option>
+            <option value="Assignment">Assignment</option>
+            <option value="Practice">Practice</option>
+            <option value="Revision">Revision</option>
+            <option value="Project">Project</option>
+          </select>
+
+          {/* Reset Filters Button */}
+          {(selectedStatus !== 'ALL' || selectedPriority !== 'ALL' || selectedSubject !== '' || selectedType !== 'ALL' || searchQuery) && (
+            <button
+              onClick={() => {
+                setSelectedStatus('ALL');
+                setSelectedPriority('ALL');
+                setSelectedSubject('');
+                setSelectedType('ALL');
+                setSearchQuery('');
+              }}
+              style={{
+                padding: '6px 14px',
+                borderRadius: '12px',
+                background: 'rgba(239, 68, 68, 0.12)',
+                border: '1px solid rgba(239, 68, 68, 0.3)',
+                color: '#ef4444',
+                fontSize: '0.78rem',
+                fontWeight: 800,
+                cursor: 'pointer'
+              }}
+            >
+              Reset Filters
+            </button>
+          )}
+        </div>
+      </div>
+
       {/* 3. MAIN CONTENT VIEW */}
       {activeView === 'KANBAN' && (
         <TaskKanbanBoard
@@ -278,6 +456,7 @@ export const MyTasksPage = () => {
           onUpdateStatus={handleUpdateStatus}
           onDeleteTask={handleDeleteTask}
           onStartFocus={handleStartFocus}
+          onEditTask={handleEditTask}
         />
       )}
 
@@ -311,6 +490,7 @@ export const MyTasksPage = () => {
             tasks.map(t => {
               const completedSub = (t.subtasks || []).filter(s => s.completed).length;
               const totalSub = (t.subtasks || []).length;
+              const progressPct = totalSub > 0 ? Math.round((completedSub / totalSub) * 100) : (t.status === 'COMPLETED' ? 100 : 0);
 
               return (
                 <div
@@ -337,8 +517,8 @@ export const MyTasksPage = () => {
                       {t.status === 'COMPLETED' ? <CheckCircle2 size={24} color="#10b981" /> : <Circle size={24} color="#94a3b8" />}
                     </button>
 
-                    <div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px', flexWrap: 'wrap' }}>
                         <span style={{ padding: '2px 8px', borderRadius: '6px', background: 'rgba(56, 189, 248, 0.15)', color: '#38bdf8', fontSize: '0.72rem', fontWeight: 800 }}>
                           {t.subject}
                         </span>
@@ -351,6 +531,16 @@ export const MyTasksPage = () => {
                           fontWeight: 800
                         }}>
                           ✦ {t.priority}
+                        </span>
+                        <span style={{
+                          padding: '2px 8px',
+                          borderRadius: '6px',
+                          background: 'rgba(16, 185, 129, 0.12)',
+                          color: '#10b981',
+                          fontSize: '0.72rem',
+                          fontWeight: 800
+                        }}>
+                          +{t.xpReward || 50} XP
                         </span>
                       </div>
 
@@ -370,26 +560,32 @@ export const MyTasksPage = () => {
                         </p>
                       )}
 
-                      {/* Subtasks inline */}
+                      {/* Subtasks inline with progress range bar */}
                       {totalSub > 0 && (
-                        <div style={{ display: 'flex', gap: '12px', fontSize: '0.78rem', color: isLight ? '#64748b' : '#94a3b8', marginTop: '6px' }}>
-                          <span>Subtasks: {completedSub}/{totalSub} completed</span>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginTop: '6px', maxWidth: '300px' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.74rem', color: isLight ? '#64748b' : '#94a3b8' }}>
+                            <span>Subtasks ({completedSub}/{totalSub})</span>
+                            <span style={{ fontWeight: 800 }}>{progressPct}%</span>
+                          </div>
+                          <div style={{ width: '100%', height: '5px', borderRadius: '4px', background: isLight ? '#e2e8f0' : 'rgba(255,255,255,0.1)', overflow: 'hidden' }}>
+                            <div style={{ width: `${progressPct}%`, height: '100%', background: progressPct === 100 ? '#10b981' : '#38bdf8', transition: 'width 0.3s ease' }} />
+                          </div>
                         </div>
                       )}
                     </div>
                   </div>
 
                   {/* Right Actions & Due Date */}
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
                     <div style={{ textAlign: 'right', marginRight: '8px' }}>
                       <span style={{ fontSize: '0.75rem', color: isLight ? '#64748b' : '#94a3b8', display: 'block' }}>Due Date</span>
-                      <strong style={{ fontSize: '0.88rem', color: isLight ? '#0f172a' : '#ffffff' }}>{t.dueDate}</strong>
+                      <strong style={{ fontSize: '0.88rem', color: isLight ? '#0f172a' : '#ffffff' }}>{t.dueDate || 'No Date'}</strong>
                     </div>
 
                     <button
                       onClick={() => handleStartFocus(t)}
                       style={{
-                        padding: '10px 18px',
+                        padding: '9px 16px',
                         borderRadius: '9999px',
                         background: 'linear-gradient(135deg, #38bdf8 0%, #8b5cf6 100%)',
                         color: '#ffffff',
@@ -407,9 +603,29 @@ export const MyTasksPage = () => {
                     </button>
 
                     <button
+                      onClick={() => handleEditTask(t)}
+                      title="Edit Task"
+                      style={{
+                        padding: '9px 14px',
+                        borderRadius: '9999px',
+                        background: isLight ? '#f1f5f9' : 'rgba(255, 255, 255, 0.08)',
+                        border: isLight ? '1px solid rgba(200, 220, 240, 0.9)' : '1px solid rgba(255, 255, 255, 0.15)',
+                        color: isLight ? '#0284c7' : '#38bdf8',
+                        fontWeight: 800,
+                        fontSize: '0.82rem',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '4px'
+                      }}
+                    >
+                      <Edit3 size={14} /> Edit
+                    </button>
+
+                    <button
                       onClick={() => navigate('/ai-assistant')}
                       style={{
-                        padding: '10px 14px',
+                        padding: '9px 14px',
                         borderRadius: '9999px',
                         background: isLight ? 'rgba(168, 85, 247, 0.12)' : 'rgba(168, 85, 247, 0.2)',
                         border: '1px solid rgba(168, 85, 247, 0.4)',
@@ -424,6 +640,7 @@ export const MyTasksPage = () => {
 
                     <button
                       onClick={() => handleDeleteTask(t.id)}
+                      title="Delete Task"
                       style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', padding: '6px' }}
                     >
                       <Trash2 size={16} />

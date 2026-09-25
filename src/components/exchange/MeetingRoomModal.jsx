@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { Video, Mic, MicOff, VideoOff, ScreenShare, MessageSquare, FileText, Globe, ExternalLink, X, Sparkles } from 'lucide-react';
 import { sendExchangeMessage, getExchangeMessages } from '../../services/messageService';
+import { useAuth } from '../../context/AuthContext';
 
 export const MeetingRoomModal = ({ isOpen, onClose, meeting }) => {
+  const { user } = useAuth();
   const [activeTab, setActiveTab] = useState('notes'); // 'notes' | 'chat' | 'agenda'
   const [seconds, setSeconds] = useState(0);
   const [isVideoActive, setIsVideoActive] = useState(true);
@@ -26,8 +28,9 @@ export const MeetingRoomModal = ({ isOpen, onClose, meeting }) => {
 
   if (!isOpen || !meeting) return null;
 
+  const currentUserName = user?.name || user?.username || 'Peer Scholar';
   const roomName = `EduNova_SkillExchange_${meeting.id || 'room'}`;
-  const jitsiUrl = `https://meet.jit.si/${roomName}#config.prejoinPageEnabled=false&userInfo.displayName=${encodeURIComponent('Aarav Shah')}`;
+  const jitsiUrl = `https://meet.jit.si/${roomName}#config.prejoinPageEnabled=false&userInfo.displayName=${encodeURIComponent(currentUserName)}`;
 
   const formatTimer = (totalSec) => {
     const mins = Math.floor(totalSec / 60);
@@ -66,7 +69,7 @@ export const MeetingRoomModal = ({ isOpen, onClose, meeting }) => {
                 <h3 style={{ fontSize: '1rem', fontWeight: 800, color: '#fff', margin: 0 }}>{meeting.title || 'Peer Skill Exchange Room'}</h3>
                 <span className="se-tag-cyan" style={{ padding: '2px 8px', fontSize: '0.65rem' }}>Jitsi Live Meeting</span>
               </div>
-              <p style={{ fontSize: '0.75rem', color: '#94a3b8', margin: '2px 0 0 0' }}>Host: Aarav Shah & Peer: {meeting.participantName || 'Rahul Sharma'}</p>
+              <p style={{ fontSize: '0.75rem', color: '#94a3b8', margin: '2px 0 0 0' }}>Host: {currentUserName} & Peer: {meeting.participantName || 'Peer'}</p>
             </div>
           </div>
 

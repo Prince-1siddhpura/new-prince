@@ -1,4 +1,5 @@
 // EduNova Sage AI Service — Facade Re-export Module
+// Phase 7 Compliance: Route all external AI calls through backend, zero simulated responses
 
 import { aiService } from './ai/aiService';
 
@@ -42,14 +43,7 @@ export const generateFormulaSheet = async (subjectName, topicName) => {
 };
 
 export const generateStudyPlan = async (goal, availableHoursPerWeek = 8) => {
-  const hrs = ((availableHoursPerWeek || 8) / 5).toFixed(1);
-  return [
-    { day: 'Monday', focus: 'Core Theory & Concepts', hours: hrs, topic: `${goal} Foundations` },
-    { day: 'Tuesday', focus: 'Interactive Simulation & Labs', hours: hrs, topic: `Spatial Model & Practice` },
-    { day: 'Wednesday', focus: 'Code Practice & Quizzes', hours: hrs, topic: `Knowledge Check Assessment` },
-    { day: 'Thursday', focus: 'Peer Skill Exchange & Swap', hours: hrs, topic: `Mentorship Swap Chat` },
-    { day: 'Friday', focus: 'Synthesis & Progress Analytics', hours: hrs, topic: `Skill DNA & Weak Area Review` }
-  ];
+  return aiService.generateStudyPlan(goal, availableHoursPerWeek);
 };
 
 export const generateRevisionPlan = async (subjectName, weakTopics = []) => {
@@ -74,6 +68,14 @@ export const generateSubjectRecommendations = async (subjectName) => {
 
 export const explainWrongAnswer = async (questionText, userAnswer, correctAnswer) => {
   return aiService.explainWrongAnswer({ questionText, userAnswer, correctAnswer });
+};
+
+export const analyzeDocument = async (file, prompt) => {
+  return aiService.analyzeDocument(file, prompt);
+};
+
+export const getVisionStatus = async () => {
+  return aiService.getVisionStatus();
 };
 
 export default aiService;

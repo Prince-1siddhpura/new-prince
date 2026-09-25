@@ -207,7 +207,7 @@ export const ARCamera = ({ onAskSage, onRewardXP, model, experience }) => {
       setDetectedResult({
         name: customSpatialModel.name,
         category: customSpatialModel.category,
-        confidencePercent: '98% CONFIDENCE'
+        confidencePercent: customSpatialModel.confidencePercent || 'CUSTOM SPATIAL MODEL'
       });
       setIsScanning(false);
       setTransform({ rotX: 0, rotY: 0, scale: 1 });

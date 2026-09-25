@@ -1,15 +1,12 @@
 /**
  * Sage AI Controller (backend/controllers/aiController.js)
  * 
- * Pipeline:
- * Next.js → POST /api/ai/chat → authMiddleware → contextBuilder → PostgreSQL → Gemini → responseValidator → Next.js
- * 
- * Endpoints:
- * - POST /api/ai/chat          (Streaming Socratic tutor responses, persisted to ai_conversations)
- * - POST /api/ai/generate-quiz (Dynamic quiz generation targeting user's weakTopics)
- * - POST /api/ai/quiz          (Alias for generate-quiz)
- * - GET  /api/ai/history       (Retrieve student's past Sage tutoring conversations)
- * - POST /api/ai/weak-topic-plan (Diagnostic remediation planner)
+ * Secure AI Orchestration:
+ * - Next.js / React → /api/ai/* → requireAuth → rateLimiter → aiController → PostgreSQL + Gemini
+ * - Zero simulated AI responses in production logic
+ * - Genuine AI error handling and explicit service-unavailable states
+ * - PostgreSQL persistence for multi-turn conversations
+ * - Multimodal document and diagram analysis
  */
 
 const contextBuilder = require('../ai/contextBuilder');
@@ -17,13 +14,13 @@ const geminiProvider = require('../ai/geminiProvider');
 const { buildQuizPrompt } = require('../ai/prompts/quizGenPrompt');
 const { buildWeakTopicPlanPrompt } = require('../ai/prompts/weakTopicPrompt');
 const { validateQuizResponse, validateWeakTopicPlanResponse } = require('../ai/responseValidator');
-const prisma = require('../config/db');
 const aiService = require('../services/aiService');
+const { ALLOWED_MIME_TYPES, MAX_FILE_SIZE } = require('../middleware/uploadMiddleware');
 
 class AiController {
   /**
    * POST /api/ai/chat
-   * Socratic tutoring with streaming (SSE) and persistent Q&A storage in PostgreSQL
+   * Socratic tutoring with persistent PostgreSQL storage
    */
   async chat(req, res, next) {
     try {
@@ -32,6 +29,7 @@ class AiController {
       if (!message || typeof message !== 'string' || !message.trim()) {
         return res.status(400).json({
           success: false,
+          code: 'VALIDATION_ERROR',
           message: 'Message string is required in request body',
         });
       }
@@ -48,6 +46,13 @@ class AiController {
         data: result,
       });
     } catch (error) {
+      if (error.status && error.status !== 500) {
+        return res.status(error.status).json({
+          success: false,
+          code: error.code || 'AI_ERROR',
+          message: error.message,
+        });
+      }
       next(error);
     }
   }
@@ -65,6 +70,14 @@ class AiController {
         difficulty = 'INTERMEDIATE',
       } = req.body;
 
+      if (!geminiProvider.isConfigured()) {
+        return res.status(503).json({
+          success: false,
+          code: 'AI_SERVICE_UNAVAILABLE',
+          message: 'Sage AI Quiz Generator is currently not configured or unavailable on the server.',
+        });
+      }
+
       // 1. Fetch student context to extract weakTopics
       const studentContext = await contextBuilder.buildStudentContext(req.user.id);
 
@@ -78,8 +91,8 @@ class AiController {
         weakTopics: studentContext.weakTopics,
       });
 
-      // 3. Generate structured JSON with Gemini (includes single-attempt retry logic)
-      let parsedQuiz = await geminiProvider.generateStructuredJson({
+      // 3. Generate structured JSON with Gemini (strict mode)
+      const parsedQuiz = await geminiProvider.generateStructuredJson({
         prompt,
         systemInstruction: 'You are an expert curriculum assessment generator for EduNova. Output strictly valid RFC-8259 JSON.',
       });
@@ -94,31 +107,13 @@ class AiController {
         }
       }
 
-      // Fallback simulation if model unconfigured
+      // Zero mock fallback: Explicit 503 if genuine generation failed
       if (!validatedQuiz) {
-        const count = [5, 10, 15].includes(Number(questionCount)) ? Number(questionCount) : 5;
-        validatedQuiz = {
-          title: `${subject}: ${topic} Diagnostic Quiz`,
-          subject,
-          topic,
-          difficulty,
-          totalQuestions: count,
-          questions: Array.from({ length: count }, (_, i) => ({
-            id: i + 1,
-            question: `In ${subject} (${topic}), which principle is most critical for solving problem #${i + 1}?`,
-            codeSnippet: null,
-            options: [
-              `Fundamental definition of ${topic}`,
-              `Empirical approximation theorem`,
-              `Inverse proportionality rule`,
-              `Conservation principle`,
-            ],
-            correctIndex: 0,
-            correctAnswer: `Fundamental definition of ${topic}`,
-            explanation: `The foundational definition governs all boundary behavior in ${topic}.`,
-            bloomTaxonomy: 'APPLY',
-          })),
-        };
+        return res.status(503).json({
+          success: false,
+          code: 'AI_SERVICE_UNAVAILABLE',
+          message: 'Sage AI Quiz Generator could not generate questions at this time. Please try again shortly.',
+        });
       }
 
       return res.json({
@@ -130,6 +125,13 @@ class AiController {
         },
       });
     } catch (error) {
+      if (error.status && error.status !== 500) {
+        return res.status(error.status).json({
+          success: false,
+          code: error.code || 'AI_ERROR',
+          message: error.message,
+        });
+      }
       next(error);
     }
   }
@@ -163,8 +165,16 @@ class AiController {
   async generateWeakTopicPlan(req, res, next) {
     try {
       const { recentErrors = [], targetTopics = [] } = req.body;
-      const studentContext = await contextBuilder.buildStudentContext(req.user.id);
 
+      if (!geminiProvider.isConfigured()) {
+        return res.status(503).json({
+          success: false,
+          code: 'AI_SERVICE_UNAVAILABLE',
+          message: 'Sage AI Weak Topic Recovery Coach is not configured or unavailable.',
+        });
+      }
+
+      const studentContext = await contextBuilder.buildStudentContext(req.user.id);
       const topicsToTarget = targetTopics.length > 0 ? targetTopics : studentContext.weakTopics;
 
       const prompt = buildWeakTopicPlanPrompt({
@@ -176,7 +186,7 @@ class AiController {
         recentErrors,
       });
 
-      let rawJson = await geminiProvider.generateStructuredJson({
+      const rawJson = await geminiProvider.generateStructuredJson({
         prompt,
         systemInstruction: 'You are a master academic recovery coach. Return strictly valid JSON matching the schema.',
       });
@@ -190,42 +200,13 @@ class AiController {
         }
       }
 
+      // Zero mock fallback: Explicit 503 if genuine generation failed
       if (!validated) {
-        validated = {
-          studentName: studentContext.studentName,
-          diagnosticSummary: `Personalized 3-day recovery acceleration for ${topicsToTarget.join(', ') || 'Core Concepts'}.`,
-          targetRecoveryAreas: (topicsToTarget.length > 0 ? topicsToTarget : ['Foundational Concepts']).map((t) => ({
-            topic: t,
-            coreMisconception: `Misapplication of core principles under time pressure in ${t}.`,
-            actionableSteps: [
-              `Review 3 worked diagnostic examples for ${t}.`,
-              `Practice active recall using Feynman technique.`,
-              `Solve 5 medium-difficulty numericals without looking at answer keys.`,
-            ],
-            practiceProblem: `Explain why the primary governing formula applies to ${t}.`,
-            estimatedMinutes: 30,
-          })),
-          threeDayPlan: [
-            {
-              day: 1,
-              focus: 'Diagnostic Clarity & Concept Unpacking',
-              tasks: ['Identify core equations', 'Write 1-page summary sheet'],
-              xpReward: 50,
-            },
-            {
-              day: 2,
-              focus: 'Guided Scaffolding & Problem Solving',
-              tasks: ['Complete 5 practice problems with Sage AI', 'Analyze mistakes'],
-              xpReward: 75,
-            },
-            {
-              day: 3,
-              focus: 'Independent Mastery & Benchmark Quiz',
-              tasks: ['Take 10-question timed quiz', 'Reach >=80% accuracy'],
-              xpReward: 100,
-            },
-          ],
-        };
+        return res.status(503).json({
+          success: false,
+          code: 'AI_SERVICE_UNAVAILABLE',
+          message: 'Sage AI could not generate a remediation plan at this time. Please try again shortly.',
+        });
       }
 
       return res.json({
@@ -234,8 +215,147 @@ class AiController {
         data: validated,
       });
     } catch (error) {
+      if (error.status && error.status !== 500) {
+        return res.status(error.status).json({
+          success: false,
+          code: error.code || 'AI_ERROR',
+          message: error.message,
+        });
+      }
       next(error);
     }
+  }
+
+  /**
+   * POST /api/ai/flashcards
+   * Genuinely generate active recall flashcards
+   */
+  async generateFlashcards(req, res, next) {
+    try {
+      const { subject, topic, count } = req.body;
+      const flashcards = await aiService.generateFlashcards({
+        userId: req.user.id,
+        subject,
+        topic,
+        count,
+      });
+
+      return res.json({
+        success: true,
+        message: `Generated ${flashcards.length} active recall flashcards`,
+        data: flashcards,
+      });
+    } catch (error) {
+      if (error.status && error.status !== 500) {
+        return res.status(error.status).json({
+          success: false,
+          code: error.code || 'AI_ERROR',
+          message: error.message,
+        });
+      }
+      next(error);
+    }
+  }
+
+  /**
+   * POST /api/ai/study-plan
+   * Genuinely generate adaptive study plan
+   */
+  async generateStudyPlan(req, res, next) {
+    try {
+      const { goal, availableHoursPerWeek } = req.body;
+      const plan = await aiService.generateStudyPlan({
+        userId: req.user.id,
+        goal,
+        availableHoursPerWeek,
+      });
+
+      return res.json({
+        success: true,
+        message: 'Adaptive study plan generated',
+        data: plan,
+      });
+    } catch (error) {
+      if (error.status && error.status !== 500) {
+        return res.status(error.status).json({
+          success: false,
+          code: error.code || 'AI_ERROR',
+          message: error.message,
+        });
+      }
+      next(error);
+    }
+  }
+
+  /**
+   * POST /api/ai/analyze-document
+   * Genuinely analyze uploaded file (image or document) using Multimodal Gemini
+   */
+  async analyzeDocument(req, res, next) {
+    try {
+      const file = req.file;
+      const { prompt } = req.body;
+
+      if (!file) {
+        return res.status(400).json({
+          success: false,
+          code: 'NO_FILE_PROVIDED',
+          message: 'An uploaded file is required for document analysis.',
+        });
+      }
+
+      const result = await aiService.analyzeUploadedDocument({
+        userId: req.user.id,
+        fileBuffer: file.buffer,
+        mimeType: file.mimetype,
+        fileName: file.originalname,
+        prompt,
+      });
+
+      return res.json({
+        success: true,
+        message: 'Document analyzed successfully',
+        data: {
+          fileName: file.originalname,
+          fileSize: file.size,
+          mimeType: file.mimetype,
+          ...result,
+        },
+      });
+    } catch (error) {
+      if (error.status && error.status !== 500) {
+        return res.status(error.status).json({
+          success: false,
+          code: error.code || 'AI_ERROR',
+          message: error.message,
+        });
+      }
+      next(error);
+    }
+  }
+
+  /**
+   * GET /api/ai/vision-status
+   * Genuine reporting of multimodal vision capabilities
+   */
+  async getVisionStatus(req, res) {
+    const isConfigured = geminiProvider.isConfigured();
+    return res.json({
+      success: true,
+      data: {
+        isAvailable: isConfigured,
+        model: geminiProvider.modelName,
+        maxFileSizeBytes: MAX_FILE_SIZE,
+        maxFileSizeMB: MAX_FILE_SIZE / (1024 * 1024),
+        supportedMimeTypes: ALLOWED_MIME_TYPES,
+        status: isConfigured ? 'READY' : 'UNCONFIGURED',
+        capabilities: {
+          ocrAndDocumentAnalysis: isConfigured,
+          imageInspection: isConfigured,
+          cameraArSpatialOverlay: true, // Native 3D WebGL projection
+        },
+      },
+    });
   }
 }
 

@@ -66,7 +66,7 @@ export const RegisterPage = () => {
       await register(finalName, finalEmail, password || 'secret', learnerTrack.toUpperCase(), {
         username: finalUsername,
         phone: phone.trim(),
-        role: activeRoleObj.id === 'parent' ? 'PARENT' : 'STUDENT'
+        role: activeRoleObj.id === 'parent' ? 'PARENT' : activeRoleObj.id === 'instructor' ? 'INSTRUCTOR' : 'STUDENT'
       });
 
       if (updateLearnerType) {

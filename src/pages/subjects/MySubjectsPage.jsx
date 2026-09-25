@@ -68,9 +68,9 @@ export const MySubjectsPage = () => {
   const stats = {
     activeCount,
     avgProgress,
-    streakDays: 0,
-    weeklyHours: '0h 0m',
-    totalXP: 0
+    streakDays: learner?.streakDays || 0,
+    weeklyHours: `${Math.round((userProgress?.studyMinutes || 0) / 60)}h ${(userProgress?.studyMinutes || 0) % 60}m`,
+    totalXP: learner?.xp || 0
   };
 
   // Derive Today's Focus from active subjects safely
@@ -85,14 +85,10 @@ export const MySubjectsPage = () => {
     aiRecommendation: `Sage scheduled targeted practice in ${activeSubject.name} based on your learning activity.`
   } : null;
 
-  // Derive weak topics matching user activity
-  const totalUserActivity = (userProgress?.completedLessons || 0) + (userProgress?.completedQuizzes || 0) + (userProgress?.completedAssignments || 0);
-  const weakTopics = totalUserActivity > 0 ? [
-    { subjectName: 'MATHEMATICS', topic: 'Trigonometric Applications', score: 45 },
-    { subjectName: 'PHYSICS (SCIENCE)', topic: 'Refractive Index & Lens Formula', score: 45 },
-    { subjectName: 'CHEMISTRY (SCIENCE)', topic: 'Balancing Redox Reactions', score: 45 },
-    { subjectName: 'ENGLISH LANGUAGE & LITERATURE', topic: 'Reported Speech Rules', score: 45 }
-  ] : [];
+  // Derive weak topics from learner profile
+  const weakTopics = Array.isArray(learner?.weakTopics) && learner.weakTopics.length > 0
+    ? learner.weakTopics.map(t => typeof t === 'string' ? { subjectName: 'FOCUS TOPIC', topic: t, score: 50 } : t)
+    : [];
 
   const strongTopics = subjectsList.filter(s => (s.progress || 0) >= 70).map(s => ({
     subjectName: s.name.toUpperCase(),
@@ -246,7 +242,7 @@ export const MySubjectsPage = () => {
         stats={[
           { label: `${stats.activeCount}`, subtext: 'Active Subjects', icon: BookOpen, color: '#2dd4bf', iconBg: 'rgba(20, 184, 166, 0.25)' },
           { label: `${stats.avgProgress}%`, subtext: 'Average Progress', icon: TrendingUp, color: '#34d399', iconBg: 'rgba(52, 211, 153, 0.25)' },
-          { label: '3', subtext: 'Learning Goals', isPill: true }
+          { label: `${stats.masteredCount}`, subtext: 'Mastered Topics', icon: Award, color: '#f59e0b', iconBg: 'rgba(245, 158, 11, 0.25)' }
         ]}
       />
 

@@ -20,7 +20,9 @@ export const ExchangeSessionModeModal = ({ isOpen, onClose, conversation }) => {
 
   useEffect(() => {
     if (conversation?.id) {
-      setMessages(getMessagesForConversation(conversation.id));
+      Promise.resolve(getMessagesForConversation(conversation.id)).then((msgs) => {
+        if (Array.isArray(msgs)) setMessages(msgs);
+      });
     }
   }, [conversation]);
 
@@ -32,15 +34,16 @@ export const ExchangeSessionModeModal = ({ isOpen, onClose, conversation }) => {
     return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   };
 
-  const handleSendMessage = (e) => {
+  const handleSendMessage = async (e) => {
     e.preventDefault();
     if (!chatInput.trim()) return;
-    const msg = sendChatMessage({
+    const text = chatInput.trim();
+    setChatInput('');
+    const msg = await sendChatMessage({
       conversationId: conversation.id,
-      text: chatInput.trim()
+      text
     });
     if (msg) setMessages(prev => [...prev, msg]);
-    setChatInput('');
   };
 
   return (

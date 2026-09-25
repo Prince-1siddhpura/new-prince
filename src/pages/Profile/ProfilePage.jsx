@@ -85,8 +85,8 @@ export const ProfilePage = () => {
   };
 
   // Editable Profile fields
-  const [name, setName] = useState(user?.name || learner?.name || 'Alex Mercer');
-  const [username, setUsername] = useState(learner?.username || user?.studentUsername || user?.username || 'alexmercer');
+  const [name, setName] = useState(user?.name || learner?.name || user?.email?.split('@')[0] || 'Learner');
+  const [username, setUsername] = useState(learner?.username || user?.studentUsername || user?.username || user?.email?.split('@')[0] || 'learner');
   const [title, setTitle] = useState(() => {
     const raw = user?.title || learner?.title;
     if (raw && !raw.toLowerCase().includes('full stack') && !raw.toLowerCase().includes('college')) {
@@ -101,7 +101,7 @@ export const ProfilePage = () => {
     }
     return getDefaultBio(activeLearnerType);
   });
-  const [avatar, setAvatar] = useState(() => getDynamicAvatar(user?.avatar || learner?.avatar, user?.name || learner?.name || 'Alex Mercer'));
+  const [avatar, setAvatar] = useState(() => getDynamicAvatar(user?.avatar || learner?.avatar, user?.name || learner?.name || user?.email?.split('@')[0] || 'Learner'));
   const [visibility, setVisibility] = useState(learner?.visibility || 'members');
 
   // Username validation state
@@ -125,24 +125,7 @@ export const ProfilePage = () => {
   });
 
   // Project state
-  const [projects, setProjects] = useState(learner?.projects || [
-    {
-      id: 'proj_1',
-      name: 'EduNova 3D Visualizer',
-      description: 'Interactive spatial learning visualizer for STEM concepts using WebGL.',
-      tech: 'React, Three.js, WebGL',
-      github: 'https://github.com',
-      demo: 'https://edunova.app'
-    },
-    {
-      id: 'proj_2',
-      name: 'Realtime Study Room',
-      description: 'Collaborative audio chat & canvas notebook for student study groups.',
-      tech: 'Node.js, WebRTC, Socket.io',
-      github: 'https://github.com',
-      demo: 'https://edunova.app'
-    }
-  ]);
+  const [projects, setProjects] = useState(learner?.projects || []);
 
   const [newProject, setNewProject] = useState({
     name: '',
@@ -402,9 +385,9 @@ export const ProfilePage = () => {
         title="My Learner Profile"
         subtitle="Manage your personal academic identity, verified skill evidence, project portfolio, and learning goals."
         stats={[
-          { label: `Level ${level}`, subtext: `${xp} XP Earned`, icon: Award, color: '#38bdf8', iconBg: 'rgba(56, 189, 248, 0.25)' },
-          { label: `${streakDays || 7}`, subtext: 'Day Streak', icon: Flame, color: '#f59e0b', iconBg: 'rgba(245, 158, 11, 0.25)' },
-          { label: '3', subtext: 'Learning Goals', isPill: true }
+          { label: `Level ${level || 1}`, subtext: `${xp || 0} XP Earned`, icon: Award, color: '#38bdf8', iconBg: 'rgba(56, 189, 248, 0.25)' },
+          { label: `${streakDays || 0}`, subtext: 'Day Streak', icon: Flame, color: '#f59e0b', iconBg: 'rgba(245, 158, 11, 0.25)' },
+          { label: `${goals?.length || 0}`, subtext: 'Learning Goals', icon: Target, color: '#10b981', iconBg: 'rgba(16, 185, 129, 0.25)' }
         ]}
       />
       

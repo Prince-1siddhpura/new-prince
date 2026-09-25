@@ -3,7 +3,7 @@
  * High-performance task management service with local persistence.
  */
 
-import { gamificationApi } from '../lib/apiClient';
+import { taskApi, gamificationApi } from '../lib/apiClient';
 
 const STORAGE_KEY = 'edunova_tasks_v1';
 const GOALS_KEY = 'edunova_goals_v1';
@@ -145,21 +145,39 @@ class TaskService {
     }
   }
 
-  getTasks(filters = {}) {
+  async getTasks(filters = {}) {
+    try {
+      const res = await taskApi.getTasks(filters);
+      if (res?.success && Array.isArray(res.data)) {
+        const normalized = res.data.map(t => ({
+          ...t,
+          dueDate: t.dueDate ? t.dueDate.split('T')[0] : '',
+          startDate: t.startDate ? t.startDate.split('T')[0] : '',
+        }));
+        this.saveAllTasks(normalized);
+        return normalized;
+      }
+    } catch (err) {
+      console.warn('[taskService] Backend tasks fetch failed, falling back to local cache:', err.message);
+    }
+    return this.getLocalTasks(filters);
+  }
+
+  getLocalTasks(filters = {}) {
     let tasks = this.getAllTasks();
     const today = new Date().toISOString().split('T')[0];
 
     if (filters.search) {
       const q = filters.search.toLowerCase();
       tasks = tasks.filter(t => 
-        t.title.toLowerCase().includes(q) || 
+        (t.title && t.title.toLowerCase().includes(q)) || 
         (t.description && t.description.toLowerCase().includes(q)) ||
         (t.subject && t.subject.toLowerCase().includes(q)) ||
         (t.topic && t.topic.toLowerCase().includes(q))
       );
     }
 
-    if (filters.subject) {
+    if (filters.subject && filters.subject !== 'ALL') {
       tasks = tasks.filter(t => t.subject === filters.subject);
     }
 
@@ -173,11 +191,11 @@ class TaskService {
 
     if (filters.status && filters.status !== 'ALL') {
       if (filters.status === 'OVERDUE') {
-        tasks = tasks.filter(t => t.status !== 'COMPLETED' && t.dueDate < today);
+        tasks = tasks.filter(t => t.status !== 'COMPLETED' && t.dueDate && t.dueDate < today);
       } else if (filters.status === 'TODAY') {
         tasks = tasks.filter(t => t.dueDate === today);
       } else if (filters.status === 'UPCOMING') {
-        tasks = tasks.filter(t => t.dueDate > today && t.status !== 'COMPLETED');
+        tasks = tasks.filter(t => t.dueDate && t.dueDate > today && t.status !== 'COMPLETED');
       } else {
         tasks = tasks.filter(t => t.status === filters.status);
       }
@@ -190,7 +208,25 @@ class TaskService {
     return tasks;
   }
 
-  getSummary() {
+  async getSummary() {
+    try {
+      const res = await taskApi.getSummary();
+      if (res?.success && res.data) {
+        return {
+          total: res.data.total || 0,
+          completed: res.data.completed || 0,
+          todayTasks: res.data.todayTasks || res.data.today || 0,
+          today: res.data.today || 0,
+          overdue: res.data.overdue || 0,
+          upcoming: res.data.upcoming || 0,
+          important: res.data.important || 0,
+          completionRate: res.data.completionRate || 0,
+        };
+      }
+    } catch (err) {
+      console.warn('[taskService] Backend summary fetch failed, using local calculation:', err.message);
+    }
+
     const tasks = this.getAllTasks();
     const today = new Date().toISOString().split('T')[0];
 
@@ -203,54 +239,92 @@ class TaskService {
     return {
       total: tasks.length,
       todayTasks,
+      today: todayTasks,
       upcoming,
       overdue,
       completed,
-      important
+      important,
+      completionRate: tasks.length > 0 ? Math.round((completed / tasks.length) * 100) : 0,
     };
   }
 
-  createTask(taskData) {
+  async createTask(taskData) {
     const tasks = this.getAllTasks();
+    const tempId = `task-${Date.now()}`;
     const newTask = {
-      id: `task-${Date.now()}`,
+      id: tempId,
       title: taskData.title || 'Untitled Task',
       description: taskData.description || '',
       subject: taskData.subject || 'General',
       topic: taskData.topic || '',
       type: taskData.type || 'Study',
       priority: taskData.priority || 'MEDIUM',
-      status: 'NOT_STARTED',
+      status: taskData.status || 'NOT_STARTED',
       startDate: taskData.startDate || new Date().toISOString().split('T')[0],
       dueDate: taskData.dueDate || new Date().toISOString().split('T')[0],
       estimatedDuration: Number(taskData.estimatedDuration) || 30,
       difficulty: taskData.difficulty || 'Medium',
       goalId: taskData.goalId || '',
-      isImportant: !!taskData.isImportant,
-      tags: taskData.tags || [],
-      subtasks: taskData.subtasks || [],
+      isImportant: Boolean(taskData.isImportant),
+      tags: Array.isArray(taskData.tags) ? taskData.tags : [],
+      subtasks: Array.isArray(taskData.subtasks) ? taskData.subtasks : [],
       notes: taskData.notes || '',
+      xpReward: Number(taskData.xpReward) || 50,
       createdAt: new Date().toISOString()
     };
 
     tasks.unshift(newTask);
     this.saveAllTasks(tasks);
+
+    try {
+      const res = await taskApi.createTask(newTask);
+      if (res?.success && res.data) {
+        const saved = {
+          ...res.data,
+          dueDate: res.data.dueDate ? res.data.dueDate.split('T')[0] : newTask.dueDate,
+          startDate: res.data.startDate ? res.data.startDate.split('T')[0] : newTask.startDate,
+        };
+        const idx = tasks.findIndex(t => t.id === tempId);
+        if (idx !== -1) {
+          tasks[idx] = saved;
+          this.saveAllTasks(tasks);
+        }
+        return saved;
+      }
+    } catch (err) {
+      console.warn('[taskService] Backend create task error:', err.message);
+    }
+
     return newTask;
   }
 
-  updateTask(taskId, updates) {
+  async updateTask(taskId, updates) {
     const tasks = this.getAllTasks();
     const idx = tasks.findIndex(t => t.id === taskId);
     if (idx !== -1) {
-      const prevStatus = tasks[idx].status;
       tasks[idx] = { ...tasks[idx], ...updates };
       this.saveAllTasks(tasks);
 
-      // Award database XP if task just completed
-      if (updates.status === 'COMPLETED' && prevStatus !== 'COMPLETED') {
-        gamificationApi.addXp(30, `Task Completed: ${tasks[idx].title}`).catch(err => {
-          console.warn('Could not award task XP:', err.message);
-        });
+      try {
+        let res;
+        if (updates.status === 'COMPLETED') {
+          res = await taskApi.completeTask(taskId);
+          if (res?.xpAwarded > 0 && typeof window !== 'undefined') {
+            window.dispatchEvent(new CustomEvent('edunova_xp_updated', { detail: { xp: res.xpAwarded } }));
+          }
+        } else {
+          res = await taskApi.updateTask(taskId, updates);
+        }
+        if (res?.data) {
+          tasks[idx] = {
+            ...tasks[idx],
+            ...res.data,
+            dueDate: res.data.dueDate ? res.data.dueDate.split('T')[0] : tasks[idx].dueDate,
+          };
+          this.saveAllTasks(tasks);
+        }
+      } catch (err) {
+        console.warn('[taskService] Backend update task error:', err.message);
       }
 
       return tasks[idx];
@@ -258,14 +332,20 @@ class TaskService {
     return null;
   }
 
-  deleteTask(taskId) {
+  async deleteTask(taskId) {
     let tasks = this.getAllTasks();
     tasks = tasks.filter(t => t.id !== taskId);
     this.saveAllTasks(tasks);
+
+    try {
+      await taskApi.deleteTask(taskId);
+    } catch (err) {
+      console.warn('[taskService] Backend delete task error:', err.message);
+    }
     return true;
   }
 
-  toggleSubtask(taskId, subtaskId) {
+  async toggleSubtask(taskId, subtaskId) {
     const tasks = this.getAllTasks();
     const task = tasks.find(t => t.id === taskId);
     if (task && task.subtasks) {
@@ -273,25 +353,34 @@ class TaskService {
       if (st) {
         st.completed = !st.completed;
         
-        // Auto calculate progress
         const completedCount = task.subtasks.filter(s => s.completed).length;
         if (completedCount === task.subtasks.length) {
           task.status = 'COMPLETED';
-        } else if (completedCount > 0) {
+        } else if (completedCount > 0 && task.status === 'NOT_STARTED') {
           task.status = 'IN_PROGRESS';
         }
         this.saveAllTasks(tasks);
+
+        try {
+          const res = await taskApi.toggleSubtask(taskId, subtaskId);
+          if (res?.data) {
+            Object.assign(task, res.data);
+            this.saveAllTasks(tasks);
+          }
+        } catch (err) {
+          console.warn('[taskService] Backend toggle subtask error:', err.message);
+        }
       }
     }
     return task;
   }
 
-  rescheduleTask(taskId, newDueDate) {
-    return this.updateTask(taskId, { dueDate: newDueDate });
+  async rescheduleTask(taskId, newDueDate) {
+    return await this.updateTask(taskId, { dueDate: newDueDate });
   }
 
-  getInsights() {
-    const tasks = this.getAllTasks();
+  getInsights(providedTasks = null) {
+    const tasks = Array.isArray(providedTasks) ? providedTasks : this.getAllTasks();
     const total = tasks.length;
     if (total === 0) {
       return {
@@ -307,7 +396,7 @@ class TaskService {
     const completedCount = tasks.filter(t => t.status === 'COMPLETED').length;
     const completedRate = Math.round((completedCount / total) * 100);
     const today = new Date().toISOString().split('T')[0];
-    const overdueCount = tasks.filter(t => t.dueDate < today && t.status !== 'COMPLETED').length;
+    const overdueCount = tasks.filter(t => t.dueDate && t.dueDate < today && t.status !== 'COMPLETED').length;
 
     const subjects = {};
     tasks.forEach(t => {
@@ -338,3 +427,4 @@ class TaskService {
 
 export const taskService = new TaskService();
 export default taskService;
+

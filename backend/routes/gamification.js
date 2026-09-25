@@ -6,6 +6,7 @@ const { validate } = require('../middleware/validate');
 const {
   getMissions, updateMissionProgress, completeMission,
   getXpHistory, updateStreak, getLeaderboard, addXp, getSummary,
+  getAchievements,
 } = require('../controllers/gamificationController');
 
 // ── Zod Schemas ──────────────────────────────────────────────────────────────
@@ -25,6 +26,7 @@ const leaderboardSchema = {
 // ── Routes ───────────────────────────────────────────────────────────────────
 
 router.get('/summary', requireAuth, getSummary);
+router.get('/achievements', requireAuth, getAchievements);
 router.get('/leaderboard', validate(leaderboardSchema), getLeaderboard);
 router.get('/missions', requireAuth, getMissions);
 router.post('/missions/:id/complete', requireAuth, completeMission);
@@ -35,4 +37,5 @@ router.get('/xp-history', requireAuth, getXpHistory);
 router.post('/streak', requireAuth, updateStreak);
 
 module.exports = router;
+
 

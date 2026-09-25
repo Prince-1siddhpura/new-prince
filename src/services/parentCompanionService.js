@@ -7,6 +7,7 @@
 
 import { learnerService } from './learnerService';
 import learningActivityService from './learningActivityService';
+import { parentApi } from '../lib/apiClient';
 
 const STORAGE_KEY = 'edunova_parent_companion';
 
@@ -45,6 +46,19 @@ const DEFAULT_STATE = {
   }
 };
 
+export const fetchParentCompanionState = async () => {
+  try {
+    const res = await parentApi.getCompanionConfig();
+    if (res && res.data) {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(res.data));
+      return res.data;
+    }
+  } catch (err) {
+    console.warn('Failed to fetch parent companion config from server:', err.message);
+  }
+  return getParentCompanionState();
+};
+
 export const getParentCompanionState = () => {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
@@ -52,7 +66,8 @@ export const getParentCompanionState = () => {
   } catch (e) {
     console.warn('Could not read parent companion state', e);
   }
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(DEFAULT_STATE));
+  // Try background sync
+  fetchParentCompanionState().catch(() => {});
   return DEFAULT_STATE;
 };
 
@@ -65,6 +80,11 @@ export const updateParentCompanionState = (updates) => {
   learnerService.updateParentCompanion({
     parentEmail: updated.parentEmail,
     status: updated.connectionStatus
+  });
+
+  // Persist to PostgreSQL backend
+  parentApi.saveCompanionConfig(updated).catch((err) => {
+    console.warn('Failed to save parent companion config to server:', err.message);
   });
 
   window.dispatchEvent(new CustomEvent('edunova:parent_updated', { detail: updated }));
@@ -92,6 +112,7 @@ export const disconnectParent = () => {
     connectionStatus: 'NOT_CONNECTED'
   });
 };
+
 
 /**
  * Generate Parent Dashboard Data Framework

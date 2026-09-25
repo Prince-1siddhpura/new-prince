@@ -34,21 +34,34 @@ export const Sidebar = () => {
 
   const isParentMode = isParent || location.pathname.startsWith('/parent');
   const isAdmin = user?.role === 'ADMIN';
+  const isInstructor = user?.role === 'INSTRUCTOR';
 
   const navItems = isAdmin
     ? [
         { label: 'Admin Workspace', path: '/admin', icon: ShieldCheck }
       ]
+    : isInstructor
+    ? [
+        { label: 'Instructor Studio', path: '/instructor/dashboard', icon: Home },
+        { label: 'Assigned Courses', path: '/instructor/courses', icon: BookOpen },
+        { label: 'Student Progress', path: '/instructor/students', icon: TrendingUp },
+        { label: 'Assessments', path: '/instructor/assessments', icon: CheckSquare },
+        { label: 'Smart Notes', path: '/notes', icon: FileText },
+        { label: 'Explore Curriculum', path: '/courses', icon: GraduationCap },
+        { label: 'Sage AI Tutor', path: '/ai-assistant', icon: Sparkles },
+        { label: 'Profile', path: '/profile', icon: User },
+        { label: 'Settings', path: '/settings', icon: Settings }
+      ]
     : isParentMode
     ? [
         { label: 'Parent Dashboard', path: '/parent/dashboard', icon: Home },
-        { label: 'Child Performance', path: '/analytics', icon: TrendingUp },
+        { label: 'Child Performance', path: '/parent/performance', icon: TrendingUp },
         { label: 'Parent Sage AI', path: '/ai-assistant', icon: Sparkles },
         { label: 'Study Planner', path: '/study-planner', icon: LayoutGrid },
         { label: 'My Tasks', path: '/tasks', icon: CheckSquare },
         { label: 'Game Center', path: '/games', icon: Gamepad2 },
         { label: 'Explore Curriculum', path: '/courses', icon: GraduationCap },
-        { label: 'Child Profile', path: '/profile', icon: User },
+        { label: 'Child Profile', path: '/parent/child-profile', icon: User },
         { label: 'Settings', path: '/settings', icon: Settings }
       ]
     : [

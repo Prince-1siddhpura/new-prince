@@ -151,11 +151,14 @@ const getGamificationSummary = async (userId) => {
     Math.max(0, Math.round(((profile.xp - currentLevelBaseXp) / span) * 100))
   );
 
-  const xpHistory = await prisma.xpTransaction.findMany({
-    where: { userId },
-    orderBy: { createdAt: 'desc' },
-    take: 10,
-  });
+  const [xpHistory, achievementsData] = await Promise.all([
+    prisma.xpTransaction.findMany({
+      where: { userId },
+      orderBy: { createdAt: 'desc' },
+      take: 10,
+    }),
+    getAchievements(userId),
+  ]);
 
   return {
     xp: profile.xp,
@@ -165,6 +168,9 @@ const getGamificationSummary = async (userId) => {
     currentLevelBaseXp,
     progressPercent,
     xpHistory,
+    achievements: achievementsData.achievements,
+    achievementsUnlocked: achievementsData.unlockedCount,
+    totalAchievements: achievementsData.totalCount,
   };
 };
 
@@ -240,15 +246,18 @@ const getLeaderboard = async ({ limit = 20 } = {}) => {
     },
   });
 
-  return profiles.map((p, i) => ({
-    rank: i + 1,
-    userId: p.user.id,
-    name: p.user.name,
-    avatar: p.user.avatar,
-    xp: p.xp,
-    level: p.level,
-    streakDays: p.streakDays,
-  }));
+  return profiles
+    .filter((p) => p.user)
+    .map((p, i) => ({
+      rank: i + 1,
+      userId: p.user.id,
+      name: p.user.name,
+      avatar: p.user.avatar,
+      role: p.user.role,
+      xp: p.xp,
+      level: p.level,
+      streakDays: p.streakDays,
+    }));
 };
 
 /**
@@ -310,9 +319,164 @@ const claimMission = async (userId, missionId) => {
   });
 };
 
+/**
+ * Calculate verified achievements for user strictly from real PostgreSQL database records
+ */
+const getAchievements = async (userId) => {
+  const [
+    profile,
+    completedTasksCount,
+    quizAttemptsCount,
+    highScoreQuizzesCount,
+    labAttemptsCount,
+    xrCompletedCount,
+    completedStudySessionsCount,
+    completedExchangesCount,
+  ] = await Promise.all([
+    prisma.learnerProfile.findUnique({ where: { userId } }),
+    prisma.task.count({ where: { userId, status: 'COMPLETED' } }),
+    prisma.quizAttempt.count({ where: { userId } }),
+    prisma.quizAttempt.count({ where: { userId, score: { gte: 85 } } }),
+    prisma.labAttempt.count({ where: { userId } }),
+    prisma.xrProgress.count({ where: { userId, completed: true } }),
+    prisma.studySession.count({ where: { userId, completed: true } }),
+    prisma.skillExchange.count({
+      where: {
+        OR: [{ senderId: userId }, { receiverId: userId }],
+        status: 'COMPLETED',
+      },
+    }),
+  ]);
+
+  const userXp = profile?.xp || 0;
+  const userLevel = profile?.level || 1;
+  const userStreak = profile?.streakDays || 0;
+
+  const catalog = [
+    {
+      id: 'ach_1',
+      title: 'First Step Beyond',
+      description: 'Completed your first interactive learning task, quiz, or virtual lab.',
+      icon: '🚀',
+      category: 'Learning',
+      rarity: 'COMMON',
+      target: 1,
+      progress: Math.min(1, completedTasksCount + quizAttemptsCount + labAttemptsCount),
+      unlocked: (completedTasksCount + quizAttemptsCount + labAttemptsCount) >= 1,
+      xpReward: 100,
+    },
+    {
+      id: 'ach_2',
+      title: 'Task Crusher',
+      description: 'Successfully completed 5 verified learning tasks on your schedule.',
+      icon: '✅',
+      category: 'Tasks',
+      rarity: 'COMMON',
+      target: 5,
+      progress: Math.min(5, completedTasksCount),
+      unlocked: completedTasksCount >= 5,
+      xpReward: 200,
+    },
+    {
+      id: 'ach_3',
+      title: '7-Day Streak Master',
+      description: 'Maintained an uninterrupted daily learning streak for 7 consecutive days.',
+      icon: '🔥',
+      category: 'Consistency',
+      rarity: 'RARE',
+      target: 7,
+      progress: Math.min(7, userStreak),
+      unlocked: userStreak >= 7,
+      xpReward: 250,
+    },
+    {
+      id: 'ach_4',
+      title: 'Quiz Champion',
+      description: 'Scored 85%+ on 3 interactive subject quizzes.',
+      icon: '🏆',
+      category: 'Quizzes',
+      rarity: 'EPIC',
+      target: 3,
+      progress: Math.min(3, highScoreQuizzesCount),
+      unlocked: highScoreQuizzesCount >= 3,
+      xpReward: 300,
+    },
+    {
+      id: 'ach_5',
+      title: 'XR Spatial Explorer',
+      description: 'Completed 3 immersive virtual lab or 3D XR simulations.',
+      icon: '🥽',
+      category: 'XR / Immersive',
+      rarity: 'EPIC',
+      target: 3,
+      progress: Math.min(3, xrCompletedCount + labAttemptsCount),
+      unlocked: (xrCompletedCount + labAttemptsCount) >= 3,
+      xpReward: 500,
+    },
+    {
+      id: 'ach_6',
+      title: 'Deep Focus Pioneer',
+      description: 'Completed 3 scheduled focus and study sessions.',
+      icon: '⏱️',
+      category: 'Study',
+      rarity: 'RARE',
+      target: 3,
+      progress: Math.min(3, completedStudySessionsCount),
+      unlocked: completedStudySessionsCount >= 3,
+      xpReward: 350,
+    },
+    {
+      id: 'ach_7',
+      title: 'Peer Skill Mentor',
+      description: 'Completed a verified peer skill exchange session.',
+      icon: '🤝',
+      category: 'Peer Learning',
+      rarity: 'RARE',
+      target: 1,
+      progress: Math.min(1, completedExchangesCount),
+      unlocked: completedExchangesCount >= 1,
+      xpReward: 400,
+    },
+    {
+      id: 'ach_8',
+      title: 'XP Centurion',
+      description: 'Reached 500 total XP through verified learning achievements.',
+      icon: '💎',
+      category: 'Mastery',
+      rarity: 'EPIC',
+      target: 500,
+      progress: Math.min(500, userXp),
+      unlocked: userXp >= 500,
+      xpReward: 450,
+    },
+    {
+      id: 'ach_9',
+      title: 'High Scholar',
+      description: 'Advanced to Level 5 or higher in the EduNova rank system.',
+      icon: '👑',
+      category: 'Mastery',
+      rarity: 'LEGENDARY',
+      target: 5,
+      progress: Math.min(5, userLevel),
+      unlocked: userLevel >= 5,
+      xpReward: 1000,
+    },
+  ];
+
+  const unlockedCount = catalog.filter((a) => a.unlocked).length;
+
+  return {
+    achievements: catalog,
+    unlockedCount,
+    totalCount: catalog.length,
+    completionPercentage: Math.round((unlockedCount / catalog.length) * 100),
+  };
+};
+
 module.exports = {
   getMissions, updateMissionProgress, awardXp,
   getXpHistory, updateStreak, getLeaderboard, claimMission,
-  getGamificationSummary, calculateLevel,
+  getGamificationSummary, calculateLevel, getAchievements,
 };
+
 

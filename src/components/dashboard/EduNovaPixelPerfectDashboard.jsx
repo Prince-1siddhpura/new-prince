@@ -51,6 +51,7 @@ import { useUserProgress } from '../../hooks/useUserProgress';
 import { getDynamicAvatar } from '../../utils/avatarUtils';
 import { progressService } from '../../services/progressService';
 import { useDynamicGreeting } from '../../hooks/useDynamicGreeting';
+import { courseApi, taskApi, analyticsApi, notificationApi, progressApi, exchangeApi } from '../../lib/apiClient';
 
 export const EduNovaPixelPerfectDashboard = () => {
   const navigate = useNavigate();
@@ -59,6 +60,7 @@ export const EduNovaPixelPerfectDashboard = () => {
   const { xp: learningXp, level: learningLevel, streakDays: learningStreak, earnXp } = useLearning() || {};
   const { theme, toggleTheme } = useTheme();
   const isLight = theme === 'light';
+  const { selectedSubjects = [] } = useSubjects() || {};
 
   // Dynamic User Progress state (0% baseline for new users, updates as user learns, practices, submits assignments)
   const {
@@ -166,46 +168,87 @@ export const EduNovaPixelPerfectDashboard = () => {
   const activeSubject = displaySubjects[0] || null;
   const isSubjectInProgress = Boolean(activeSubject && typeof activeSubject.progress === 'number' && activeSubject.progress > 0);
 
-  const trackCourses = {
-    school: {
-      title: 'Trigonometric Identities',
-      subtitle: 'Mathematics • Class 10 CBSE',
-      image: 'https://images.unsplash.com/photo-1635070041078-e363dbe005cb?auto=format&fit=crop&w=300&q=80',
-      progress: 83,
-      lessonsDone: 5,
-      totalLessons: 6,
-      isContinue: true
-    },
-    college: {
-      title: 'Binary Tree & AVL Rotations',
-      subtitle: 'Data Structures • B.Tech CSE',
-      image: 'https://images.unsplash.com/photo-1516116211223-4258568e1040?auto=format&fit=crop&w=300&q=80',
-      progress: 66,
-      lessonsDone: 4,
-      totalLessons: 6,
-      isContinue: true
-    },
-    exam: {
-      title: 'Data Interpretation & Logical Caselets',
-      subtitle: 'Quantitative Aptitude • CMAT 2026',
-      image: 'https://images.unsplash.com/photo-1551288049-bebda4e38f71?auto=format&fit=crop&w=300&q=80',
-      progress: 50,
-      lessonsDone: 3,
-      totalLessons: 6,
-      isContinue: true
-    },
-    skills: {
-      title: 'React 19 Server Components & Redux',
-      subtitle: 'Full Stack Development',
-      image: 'https://images.unsplash.com/photo-1555066931-4365d14bab8c?auto=format&fit=crop&w=300&q=80',
-      progress: 83,
-      lessonsDone: 5,
-      totalLessons: 6,
-      isContinue: true
-    }
-  };
+  const [enrolledCourses, setEnrolledCourses] = useState([]);
+  const [dbTasks, setDbTasks] = useState([]);
+  const [dbStudySessions, setDbStudySessions] = useState([]);
+  const [notificationsList, setNotificationsList] = useState([]);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [dbExchanges, setDbExchanges] = useState([]);
 
-  const activeCourse = trackCourses[activeTrackTab] || trackCourses.school;
+  useEffect(() => {
+    let isMounted = true;
+    const fetchDashboardData = async () => {
+      try {
+        const [coursesRes, tasksRes, sessionsRes, notifsRes, exchangesRes] = await Promise.allSettled([
+          courseApi.getMyEnrolled(),
+          taskApi.getTasks({ limit: 20 }),
+          analyticsApi.getStudySessions({ limit: 10 }),
+          notificationApi.getNotifications({ limit: 10 }),
+          exchangeApi.getExchanges({ limit: 5 }),
+        ]);
+
+        if (!isMounted) return;
+
+        if (coursesRes.status === 'fulfilled' && coursesRes.value?.success && Array.isArray(coursesRes.value.data)) {
+          setEnrolledCourses(coursesRes.value.data);
+        }
+
+        if (tasksRes.status === 'fulfilled' && tasksRes.value?.success && Array.isArray(tasksRes.value.data)) {
+          setDbTasks(tasksRes.value.data);
+        }
+
+        if (sessionsRes.status === 'fulfilled' && sessionsRes.value?.success && Array.isArray(sessionsRes.value.data)) {
+          setDbStudySessions(sessionsRes.value.data);
+        }
+
+        if (notifsRes.status === 'fulfilled' && notifsRes.value?.success && Array.isArray(notifsRes.value.data)) {
+          const list = notifsRes.value.data;
+          setNotificationsList(list);
+          setUnreadCount(list.filter(n => !n.isRead && !n.read).length);
+        }
+
+        if (exchangesRes.status === 'fulfilled' && exchangesRes.value?.success && Array.isArray(exchangesRes.value.data)) {
+          setDbExchanges(exchangesRes.value.data);
+        }
+      } catch (err) {
+        console.error('Error loading dashboard data:', err);
+      }
+    };
+
+    fetchDashboardData();
+    return () => { isMounted = false; };
+  }, [user?.id]);
+
+  const activeCourseProgress = enrolledCourses.length > 0
+    ? (enrolledCourses.find(ec => (ec.course?.category || '').toLowerCase() === activeTrackTab.toLowerCase()) || enrolledCourses[0])
+    : null;
+
+  const activeCourse = activeCourseProgress ? {
+    id: activeCourseProgress.course?.id || activeCourseProgress.courseId,
+    title: activeCourseProgress.course?.title || 'Enrolled Course',
+    subtitle: `${activeCourseProgress.course?.category || 'Education'} • ${activeCourseProgress.course?.instructor?.name || 'EduNova'}`,
+    image: activeCourseProgress.course?.thumbnailUrl || 'https://images.unsplash.com/photo-1635070041078-e363dbe005cb?auto=format&fit=crop&w=300&q=80',
+    progress: activeCourseProgress.progress || 0,
+    lessonsDone: (activeCourseProgress.completedModuleIds || []).length,
+    totalLessons: activeCourseProgress.course?.modules?.length || (activeCourseProgress.completedModuleIds || []).length || 1,
+    isContinue: (activeCourseProgress.progress || 0) > 0,
+  } : null;
+
+  const weakTopicsList = Array.isArray(learner?.weakTopics) && learner.weakTopics.length > 0
+    ? learner.weakTopics.map(t => typeof t === 'string' ? { topic: t, subject: 'General', accuracy: '60%', color: '#fb7185' } : t)
+    : (Array.isArray(user?.learnerProfile?.weakTopics) && user.learnerProfile.weakTopics.length > 0
+      ? user.learnerProfile.weakTopics.map(t => typeof t === 'string' ? { topic: t, subject: 'General', accuracy: '60%', color: '#fb7185' } : t)
+      : []);
+
+  const todaysSchedule = dbStudySessions.map(session => ({
+    time: session.plannedDate ? new Date(session.plannedDate).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Flexible',
+    title: session.subject?.name ? `${session.subject.name} Study Session` : (session.topic || 'Study Session'),
+    color: '#38bdf8',
+    status: session.isCompleted ? 'Completed' : 'Scheduled',
+    action: () => navigate('/study-planner')
+  }));
+
+  const pendingTasksList = dbTasks.filter(t => t.status !== 'COMPLETED');
 
   const [searchQuery, setSearchQuery] = useState('');
   const [aiPrompt, setAiPrompt] = useState('');
@@ -213,41 +256,6 @@ export const EduNovaPixelPerfectDashboard = () => {
   // Header Dropdown Interactive States
   const [showNotificationsMenu, setShowNotificationsMenu] = useState(false);
   const [showProfileMenu, setShowProfileMenu] = useState(false);
-  const [unreadCount, setUnreadCount] = useState(4);
-  const [notificationsList, setNotificationsList] = useState([
-    {
-      id: 1,
-      title: 'Sage AI Personalized Hint',
-      message: 'Physics: You solved 3 mechanics problems today! Keep going.',
-      time: '10 min ago',
-      unread: true,
-      accent: '#38bdf8'
-    },
-    {
-      id: 2,
-      title: 'Upcoming Quiz: Chemistry',
-      message: 'Chapter 4 Organic Chemistry quiz starts at 4:00 PM.',
-      time: '45 min ago',
-      unread: true,
-      accent: '#a855f7'
-    },
-    {
-      id: 3,
-      title: 'Streak Master Level 4',
-      message: 'Congratulations! You unlocked a 7-day learning streak.',
-      time: '2 hours ago',
-      unread: true,
-      accent: '#f59e0b'
-    },
-    {
-      id: 4,
-      title: 'Peer Skill Session Invite',
-      message: 'Arjun requested a Python code review session.',
-      time: '5 hours ago',
-      unread: true,
-      accent: '#ec4899'
-    }
-  ]);
 
   const headerControlsRef = useRef(null);
 
@@ -263,8 +271,13 @@ export const EduNovaPixelPerfectDashboard = () => {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  const markAllRead = () => {
-    setNotificationsList(prev => prev.map(item => ({ ...item, unread: false })));
+  const markAllRead = async () => {
+    try {
+      await notificationApi.markAllRead();
+    } catch (e) {
+      // non-blocking
+    }
+    setNotificationsList(prev => prev.map(item => ({ ...item, isRead: true, unread: false })));
     setUnreadCount(0);
   };
 
@@ -339,7 +352,7 @@ export const EduNovaPixelPerfectDashboard = () => {
             stats={[
               { label: `Level ${level}`, subtext: `${xp} / ${level * 500} XP`, icon: BookOpen, color: '#2dd4bf', iconBg: 'rgba(20, 184, 166, 0.25)', progress: Math.min(100, (xp / (level * 500)) * 100) },
               { label: `${streak}`, subtext: 'Day Streak', icon: Flame, color: '#f59e0b', iconBg: 'rgba(245, 158, 11, 0.25)' },
-              { label: `${goalsCount}`, subtext: 'Learning Goals', isPill: true }
+              { label: `${goalsCount}`, subtext: 'Learning Goals', icon: Target, color: '#38bdf8', iconBg: 'rgba(56, 189, 248, 0.25)' }
             ]}
           />
 
@@ -393,209 +406,10 @@ export const EduNovaPixelPerfectDashboard = () => {
           </div>
 
           {/* My Subjects Widget Matching Reference Design */}
-          <MySubjectsWidget trackType={activeTrackTab} customSubjects={displaySubjects} />
+          <MySubjectsWidget trackType={activeTrackTab} customSubjects={selectedSubjects} />
 
 
-          {/* C. TRACK-SPECIFIC COMMAND CENTER CARD ("add more requirement on dashboard") */}
-          {activeTrackTab === 'school' && (
-            <div style={{
-              borderRadius: '24px',
-              background: isLight ? 'linear-gradient(135deg, rgba(255, 255, 255, 0.88) 0%, rgba(235, 244, 255, 0.82) 100%)' : 'linear-gradient(135deg, rgba(30, 45, 90, 0.72) 0%, rgba(18, 25, 60, 0.82) 60%, rgba(35, 25, 80, 0.75) 100%)',
-              backdropFilter: 'blur(28px)',
-              border: isLight ? '1px solid rgba(255, 255, 255, 0.95)' : '1px solid rgba(34, 211, 238, 0.35)',
-              padding: '22px',
-              boxShadow: isLight ? '0 15px 40px rgba(100, 130, 200, 0.15)' : '0 20px 50px rgba(0, 0, 0, 0.55), inset 0 1.5px 2px rgba(255, 255, 255, 0.3)'
-            }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '10px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                  <div style={{ width: '36px', height: '36px', borderRadius: '12px', background: 'rgba(34, 211, 238, 0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    <Award size={20} color="#22d3ee" />
-                  </div>
-                  <div>
-                    <h3 style={{ fontSize: '1.1rem', fontWeight: 800, color: isLight ? '#18345F' : '#ffffff', margin: 0 }}>
-                      CBSE Class 10 Board Exam Command Center
-                    </h3>
-                    <span style={{ fontSize: '0.74rem', color: isLight ? '#5D7192' : '#94a3b8' }}>Target: 95%+ in Board Examinations 2026</span>
-                  </div>
-                </div>
-                <span style={{ fontSize: '0.78rem', color: '#e11d48', fontWeight: 800, background: 'rgba(244, 63, 94, 0.15)', border: '1px solid rgba(244, 63, 94, 0.35)', padding: '4px 12px', borderRadius: '9999px' }}>
-                  ⏳ 142 Days Remaining
-                </span>
-              </div>
-
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '14px' }}>
-                <div style={{ padding: '14px', borderRadius: '16px', background: isLight ? 'rgba(255, 255, 255, 0.75)' : 'rgba(255, 255, 255, 0.05)', border: isLight ? '1px solid rgba(220, 230, 245, 0.8)' : '1px solid rgba(255, 255, 255, 0.1)' }}>
-                  <span style={{ fontSize: '0.72rem', color: isLight ? '#5D7192' : '#cbd5e1', textTransform: 'uppercase', fontWeight: 800 }}>Syllabus Coverage</span>
-                  <strong style={{ display: 'block', fontSize: '1.2rem', color: '#0284c7', margin: '4px 0' }}>{(dynamicLearning || 0).toFixed(1)}% Complete</strong>
-                  <div style={{ width: '100%', height: '5px', background: isLight ? 'rgba(0,0,0,0.08)' : 'rgba(255,255,255,0.1)', borderRadius: '3px', overflow: 'hidden' }}>
-                    <div style={{ width: `${Math.min(100, dynamicLearning || 0)}%`, height: '100%', background: '#38bdf8', transition: 'width 0.4s ease' }} />
-                  </div>
-                </div>
-
-                <div style={{ padding: '14px', borderRadius: '16px', background: isLight ? 'rgba(255, 255, 255, 0.75)' : 'rgba(255, 255, 255, 0.05)', border: isLight ? '1px solid rgba(220, 230, 245, 0.8)' : '1px solid rgba(255, 255, 255, 0.1)' }}>
-                  <span style={{ fontSize: '0.72rem', color: isLight ? '#5D7192' : '#cbd5e1', textTransform: 'uppercase', fontWeight: 800 }}>Daily Bounty Quest</span>
-                  <strong style={{ display: 'block', fontSize: '1.05rem', color: '#059669', margin: '4px 0' }}>{userProgress?.completedLessons || 0} / 3 Tasks Solved</strong>
-                  <span style={{ fontSize: '0.72rem', color: isLight ? '#5D7192' : '#94a3b8' }}>{userProgress?.completedLessons > 0 ? `+${(userProgress?.completedLessons || 0) * 50} XP Claimed` : 'Complete 1 lesson to claim bonus'}</span>
-                </div>
-
-                <div style={{ padding: '14px', borderRadius: '16px', background: isLight ? 'rgba(255, 255, 255, 0.75)' : 'rgba(255, 255, 255, 0.05)', border: isLight ? '1px solid rgba(220, 230, 245, 0.8)' : '1px solid rgba(255, 255, 255, 0.1)' }}>
-                  <span style={{ fontSize: '0.72rem', color: isLight ? '#5D7192' : '#cbd5e1', textTransform: 'uppercase', fontWeight: 800 }}>NCERT Solutions</span>
-                  <button onClick={() => navigate('/my-subjects')} style={{ width: '100%', marginTop: '6px', padding: '7px 12px', borderRadius: '10px', background: 'rgba(99, 102, 241, 0.2)', border: '1px solid rgba(99, 102, 241, 0.4)', color: '#4f46e5', fontSize: '0.78rem', fontWeight: 700, cursor: 'pointer' }}>
-                    📘 Practice NCERT Exemplars
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {activeTrackTab === 'college' && (
-            <div style={{
-              borderRadius: '24px',
-              background: isLight ? 'linear-gradient(135deg, rgba(255, 255, 255, 0.88) 0%, rgba(235, 244, 255, 0.82) 100%)' : 'linear-gradient(135deg, rgba(30, 45, 90, 0.72) 0%, rgba(18, 25, 60, 0.82) 60%, rgba(35, 25, 80, 0.75) 100%)',
-              backdropFilter: 'blur(28px)',
-              border: isLight ? '1px solid rgba(255, 255, 255, 0.95)' : '1px solid rgba(168, 85, 247, 0.35)',
-              padding: '22px',
-              boxShadow: isLight ? '0 15px 40px rgba(100, 130, 200, 0.15)' : '0 20px 50px rgba(0, 0, 0, 0.55), inset 0 1.5px 2px rgba(255, 255, 255, 0.3)'
-            }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '10px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                  <div style={{ width: '36px', height: '36px', borderRadius: '12px', background: 'rgba(168, 85, 247, 0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    <Atom size={20} color="#a855f7" />
-                  </div>
-                  <div>
-                    <h3 style={{ fontSize: '1.1rem', fontWeight: 800, color: isLight ? '#18345F' : '#ffffff', margin: 0 }}>
-                      B.Tech Computer Science – Semester 5 Command Center
-                    </h3>
-                    <span style={{ fontSize: '0.74rem', color: isLight ? '#5D7192' : '#94a3b8' }}>Target: 8.8 SGPA • Mid-Term Exams Prep</span>
-                  </div>
-                </div>
-                <span style={{ fontSize: '0.78rem', color: '#0284c7', fontWeight: 800, background: 'rgba(56, 189, 248, 0.15)', border: '1px solid rgba(56, 189, 248, 0.35)', padding: '4px 12px', borderRadius: '9999px' }}>
-                  Target: 8.8 SGPA
-                </span>
-              </div>
-
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '14px' }}>
-                <div style={{ padding: '14px', borderRadius: '16px', background: isLight ? 'rgba(255, 255, 255, 0.75)' : 'rgba(255, 255, 255, 0.05)', border: isLight ? '1px solid rgba(220, 230, 245, 0.8)' : '1px solid rgba(255, 255, 255, 0.1)' }}>
-                  <span style={{ fontSize: '0.72rem', color: isLight ? '#5D7192' : '#cbd5e1', textTransform: 'uppercase', fontWeight: 800 }}>Lab Practicals</span>
-                  <strong style={{ display: 'block', fontSize: '1.05rem', color: '#7c3aed', margin: '4px 0' }}>{userProgress?.completedQuizzes || 0} / 5 Labs Submitted</strong>
-                  <span style={{ fontSize: '0.72rem', color: isLight ? '#5D7192' : '#94a3b8' }}>{userProgress?.completedQuizzes > 0 ? 'Interactive Labs Logged' : '0 Labs Completed Yet'}</span>
-                </div>
-
-                <div style={{ padding: '14px', borderRadius: '16px', background: isLight ? 'rgba(255, 255, 255, 0.75)' : 'rgba(255, 255, 255, 0.05)', border: isLight ? '1px solid rgba(220, 230, 245, 0.8)' : '1px solid rgba(255, 255, 255, 0.1)' }}>
-                  <span style={{ fontSize: '0.72rem', color: isLight ? '#5D7192' : '#cbd5e1', textTransform: 'uppercase', fontWeight: 800 }}>Attendance Tracker</span>
-                  <strong style={{ display: 'block', fontSize: '1.2rem', color: '#059669', margin: '4px 0' }}>{(dynamicAttendance || 0).toFixed(1)}% Logged</strong>
-                  <span style={{ fontSize: '0.72rem', color: isLight ? '#5D7192' : '#94a3b8' }}>{dynamicAttendance >= 75 ? 'Safe (Req: 75%)' : 'Log daily attendance'}</span>
-                </div>
-
-                <div style={{ padding: '14px', borderRadius: '16px', background: isLight ? 'rgba(255, 255, 255, 0.75)' : 'rgba(255, 255, 255, 0.05)', border: isLight ? '1px solid rgba(220, 230, 245, 0.8)' : '1px solid rgba(255, 255, 255, 0.1)' }}>
-                  <span style={{ fontSize: '0.72rem', color: isLight ? '#5D7192' : '#cbd5e1', textTransform: 'uppercase', fontWeight: 800 }}>Lab Sandbox</span>
-                  <button onClick={() => navigate('/xr-studio')} style={{ width: '100%', marginTop: '6px', padding: '7px 12px', borderRadius: '10px', background: 'linear-gradient(135deg, #06b6d4, #6366f1)', color: '#ffffff', fontSize: '0.78rem', fontWeight: 700, border: 'none', cursor: 'pointer' }}>
-                    ⚡ Launch SQL & Process Simulator
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {activeTrackTab === 'exam' && (
-            <div style={{
-              borderRadius: '24px',
-              background: isLight ? 'linear-gradient(135deg, rgba(255, 255, 255, 0.88) 0%, rgba(235, 244, 255, 0.82) 100%)' : 'linear-gradient(135deg, rgba(30, 45, 90, 0.72) 0%, rgba(18, 25, 60, 0.82) 60%, rgba(35, 25, 80, 0.75) 100%)',
-              backdropFilter: 'blur(28px)',
-              border: isLight ? '1px solid rgba(255, 255, 255, 0.95)' : '1px solid rgba(245, 158, 11, 0.35)',
-              padding: '22px',
-              boxShadow: isLight ? '0 15px 40px rgba(100, 130, 200, 0.15)' : '0 20px 50px rgba(0, 0, 0, 0.55), inset 0 1.5px 2px rgba(255, 255, 255, 0.3)'
-            }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '10px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                  <div style={{ width: '36px', height: '36px', borderRadius: '12px', background: 'rgba(245, 158, 11, 0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    <Target size={20} color="#f59e0b" />
-                  </div>
-                  <div>
-                    <h3 style={{ fontSize: '1.1rem', fontWeight: 800, color: isLight ? '#18345F' : '#ffffff', margin: 0 }}>
-                      CMAT 2026 Target Speed & Accuracy Radar
-                    </h3>
-                    <span style={{ fontSize: '0.74rem', color: isLight ? '#5D7192' : '#94a3b8' }}>Target: 99.4 Percentile • Speed Drill Engine</span>
-                  </div>
-                </div>
-                <span style={{ fontSize: '0.78rem', color: '#d97706', fontWeight: 800, background: 'rgba(245, 158, 11, 0.15)', border: '1px solid rgba(245, 158, 11, 0.35)', padding: '4px 12px', borderRadius: '9999px' }}>
-                  Goal: 99.4%ile
-                </span>
-              </div>
-
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '14px' }}>
-                <div style={{ padding: '14px', borderRadius: '16px', background: isLight ? 'rgba(255, 255, 255, 0.75)' : 'rgba(255, 255, 255, 0.05)', border: isLight ? '1px solid rgba(220, 230, 245, 0.8)' : '1px solid rgba(255, 255, 255, 0.1)' }}>
-                  <span style={{ fontSize: '0.72rem', color: isLight ? '#5D7192' : '#cbd5e1', textTransform: 'uppercase', fontWeight: 800 }}>Solving Speed</span>
-                  <strong style={{ display: 'block', fontSize: '1.2rem', color: '#d97706', margin: '4px 0' }}>{userProgress?.completedQuizzes > 0 ? '42 sec / Question' : '0 sec (No Quizzes)'}</strong>
-                  <span style={{ fontSize: '0.72rem', color: '#059669' }}>{userProgress?.completedQuizzes > 0 ? '⚡ Dynamic drill active' : 'Complete quizzes to test speed'}</span>
-                </div>
-
-                <div style={{ padding: '14px', borderRadius: '16px', background: isLight ? 'rgba(255, 255, 255, 0.75)' : 'rgba(255, 255, 255, 0.05)', border: isLight ? '1px solid rgba(220, 230, 245, 0.8)' : '1px solid rgba(255, 255, 255, 0.1)' }}>
-                  <span style={{ fontSize: '0.72rem', color: isLight ? '#5D7192' : '#cbd5e1', textTransform: 'uppercase', fontWeight: 800 }}>Accuracy Rate</span>
-                  <strong style={{ display: 'block', fontSize: '1.2rem', color: '#059669', margin: '4px 0' }}>{userProgress?.completedQuizzes > 0 ? `${Math.round(dynamicPractice || 85)}% Overall` : '0.0% Overall'}</strong>
-                  <span style={{ fontSize: '0.72rem', color: isLight ? '#5D7192' : '#94a3b8' }}>{userProgress?.completedQuizzes > 0 ? 'High accuracy in DI & Quant' : 'Take a practice quiz to set score'}</span>
-                </div>
-
-                <div style={{ padding: '14px', borderRadius: '16px', background: isLight ? 'rgba(255, 255, 255, 0.75)' : 'rgba(255, 255, 255, 0.05)', border: isLight ? '1px solid rgba(220, 230, 245, 0.8)' : '1px solid rgba(255, 255, 255, 0.1)' }}>
-                  <span style={{ fontSize: '0.72rem', color: isLight ? '#5D7192' : '#cbd5e1', textTransform: 'uppercase', fontWeight: 800 }}>Timed Sectional Test</span>
-                  <button onClick={() => navigate('/ai-assistant', { state: { initialPrompt: 'Launch a 15-question timed Quant speed test' } })} style={{ width: '100%', marginTop: '6px', padding: '7px 12px', borderRadius: '10px', background: 'linear-gradient(135deg, #f59e0b, #ec4899)', color: '#ffffff', fontSize: '0.78rem', fontWeight: 700, border: 'none', cursor: 'pointer' }}>
-                    🎯 Start 15-Min Mock Test
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {activeTrackTab === 'skills' && (
-            <div style={{
-              borderRadius: '24px',
-              background: isLight ? 'linear-gradient(135deg, rgba(255, 255, 255, 0.88) 0%, rgba(235, 244, 255, 0.82) 100%)' : 'linear-gradient(135deg, rgba(30, 45, 90, 0.72) 0%, rgba(18, 25, 60, 0.82) 60%, rgba(35, 25, 80, 0.75) 100%)',
-              backdropFilter: 'blur(28px)',
-              border: isLight ? '1px solid rgba(255, 255, 255, 0.95)' : '1px solid rgba(56, 189, 248, 0.35)',
-              padding: '22px',
-              boxShadow: isLight ? '0 15px 40px rgba(100, 130, 200, 0.15)' : '0 20px 50px rgba(0, 0, 0, 0.55), inset 0 1.5px 2px rgba(255, 255, 255, 0.3)'
-            }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '10px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                  <div style={{ width: '36px', height: '36px', borderRadius: '12px', background: 'rgba(56, 189, 248, 0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    <Dna size={20} color="#38bdf8" />
-                  </div>
-                  <div>
-                    <h3 style={{ fontSize: '1.1rem', fontWeight: 800, color: isLight ? '#18345F' : '#ffffff', margin: 0 }}>
-                      Full Stack & Skill DNA Career Command Center
-                    </h3>
-                    <span style={{ fontSize: '0.74rem', color: isLight ? '#5D7192' : '#94a3b8' }}>Industry Readiness Score: 88 / 100</span>
-                  </div>
-                </div>
-                <span style={{ fontSize: '0.78rem', color: '#0284c7', fontWeight: 800, background: 'rgba(56, 189, 248, 0.15)', border: '1px solid rgba(56, 189, 248, 0.35)', padding: '4px 12px', borderRadius: '9999px' }}>
-                  Readiness: 88/100
-                </span>
-              </div>
-
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '14px' }}>
-                <div style={{ padding: '14px', borderRadius: '16px', background: isLight ? 'rgba(255, 255, 255, 0.75)' : 'rgba(255, 255, 255, 0.05)', border: isLight ? '1px solid rgba(220, 230, 245, 0.8)' : '1px solid rgba(255, 255, 255, 0.1)' }}>
-                  <span style={{ fontSize: '0.72rem', color: isLight ? '#5D7192' : '#cbd5e1', textTransform: 'uppercase', fontWeight: 800 }}>Peer Exchanges</span>
-                  <strong style={{ display: 'block', fontSize: '1.05rem', color: '#0284c7', margin: '4px 0' }}>2 Active Code Reviews</strong>
-                  <span style={{ fontSize: '0.72rem', color: isLight ? '#5D7192' : '#94a3b8' }}>Python & React Swap</span>
-                </div>
-
-                <div style={{ padding: '14px', borderRadius: '16px', background: isLight ? 'rgba(255, 255, 255, 0.75)' : 'rgba(255, 255, 255, 0.05)', border: isLight ? '1px solid rgba(220, 230, 245, 0.8)' : '1px solid rgba(255, 255, 255, 0.1)' }}>
-                  <span style={{ fontSize: '0.72rem', color: isLight ? '#5D7192' : '#cbd5e1', textTransform: 'uppercase', fontWeight: 800 }}>Portfolio Capstone</span>
-                  <strong style={{ display: 'block', fontSize: '1.05rem', color: '#059669', margin: '4px 0' }}>85% Complete</strong>
-                  <span style={{ fontSize: '0.72rem', color: isLight ? '#5D7192' : '#94a3b8' }}>EduNova React Dashboard</span>
-                </div>
-
-                <div style={{ padding: '14px', borderRadius: '16px', background: isLight ? 'rgba(255, 255, 255, 0.75)' : 'rgba(255, 255, 255, 0.05)', border: isLight ? '1px solid rgba(220, 230, 245, 0.8)' : '1px solid rgba(255, 255, 255, 0.1)' }}>
-                  <span style={{ fontSize: '0.72rem', color: isLight ? '#5D7192' : '#cbd5e1', textTransform: 'uppercase', fontWeight: 800 }}>Skill Swap Hub</span>
-                  <button onClick={() => navigate('/skill-exchange')} style={{ width: '100%', marginTop: '6px', padding: '7px 12px', borderRadius: '10px', background: 'linear-gradient(135deg, #a855f7, #38bdf8)', color: '#ffffff', fontSize: '0.78rem', fontWeight: 700, border: 'none', cursor: 'pointer' }}>
-                    🤝 Join Peer Skill Match
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* D. CONTINUE LEARNING VIDEO CARD */}
+          {/* D. CONTINUE LEARNING VIDEO CARD OR EMPTY STATE */}
           <div style={{
             borderRadius: '24px',
             background: isLight ? 'linear-gradient(135deg, rgba(255, 255, 255, 0.88) 0%, rgba(235, 244, 255, 0.82) 100%)' : 'linear-gradient(135deg, rgba(30, 45, 90, 0.72) 0%, rgba(18, 25, 60, 0.82) 60%, rgba(35, 25, 80, 0.75) 100%)',
@@ -605,96 +419,147 @@ export const EduNovaPixelPerfectDashboard = () => {
             padding: '22px',
             boxShadow: isLight ? '0 15px 40px rgba(100, 130, 200, 0.15)' : '0 20px 50px rgba(0, 0, 0, 0.55), inset 0 1.5px 2px rgba(255, 255, 255, 0.3)'
           }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <div style={{ width: '32px', height: '32px', borderRadius: '10px', background: activeCourse.isContinue ? 'rgba(99, 102, 241, 0.2)' : 'rgba(16, 185, 129, 0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  <Play size={16} color={activeCourse.isContinue ? '#6366f1' : '#10b981'} />
+            {activeCourse ? (
+              <>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    <div style={{ width: '32px', height: '32px', borderRadius: '10px', background: activeCourse.isContinue ? 'rgba(99, 102, 241, 0.2)' : 'rgba(16, 185, 129, 0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      <Play size={16} color={activeCourse.isContinue ? '#6366f1' : '#10b981'} />
+                    </div>
+                    <h3 style={{ fontSize: '1.1rem', fontWeight: 800, color: isLight ? '#18345F' : '#ffffff', margin: 0, fontFamily: 'var(--font-heading)' }}>
+                      {activeCourse.isContinue ? 'Continue Learning' : 'Recommended For You'}
+                    </h3>
+                  </div>
+                  <button style={{ background: 'none', border: 'none', color: isLight ? '#5D7192' : '#94a3b8', cursor: 'pointer' }}>
+                    <MoreVertical size={18} />
+                  </button>
                 </div>
-                <h3 style={{ fontSize: '1.1rem', fontWeight: 800, color: isLight ? '#18345F' : '#ffffff', margin: 0, fontFamily: 'var(--font-heading)' }}>
-                  {activeCourse.isContinue ? 'Continue Learning' : 'Recommended For You'}
-                </h3>
-              </div>
-              <button style={{ background: 'none', border: 'none', color: isLight ? '#5D7192' : '#94a3b8', cursor: 'pointer' }}>
-                <MoreVertical size={18} />
-              </button>
-            </div>
 
-            {/* Video Lesson Banner */}
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '16px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-                {/* Thumbnail Preview */}
-                <div style={{
-                  position: 'relative',
-                  width: '110px',
-                  height: '70px',
-                  borderRadius: '14px',
-                  overflow: 'hidden',
-                  background: 'linear-gradient(135deg, #1e1b4b, #312e81)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  flexShrink: 0
-                }}>
-                  <img
-                    src={activeCourse.image}
-                    alt={activeCourse.title}
-                    style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                  />
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '16px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+                    <div style={{
+                      position: 'relative',
+                      width: '110px',
+                      height: '70px',
+                      borderRadius: '14px',
+                      overflow: 'hidden',
+                      background: 'linear-gradient(135deg, #1e1b4b, #312e81)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      flexShrink: 0
+                    }}>
+                      <img
+                        src={activeCourse.image}
+                        alt={activeCourse.title}
+                        style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                      />
+                      <div style={{
+                        position: 'absolute',
+                        width: '32px',
+                        height: '32px',
+                        borderRadius: '50%',
+                        background: 'rgba(99, 102, 241, 0.85)',
+                        backdropFilter: 'blur(8px)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        boxShadow: '0 0 15px rgba(99, 102, 241, 0.6)'
+                      }}>
+                        <Play size={14} color="#ffffff" style={{ marginLeft: '2px' }} />
+                      </div>
+                    </div>
+
+                    <div>
+                      <strong style={{ display: 'block', fontSize: '1.05rem', color: isLight ? '#18345F' : '#ffffff', marginBottom: '4px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '320px' }} title={activeCourse.title}>
+                        {activeCourse.title}
+                      </strong>
+                      <span style={{ fontSize: '0.8rem', color: isLight ? '#5D7192' : '#94a3b8', display: 'block', marginBottom: '10px' }}>{activeCourse.subtitle}</span>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                        <div style={{ width: '140px', height: '5px', background: isLight ? 'rgba(0, 0, 0, 0.08)' : 'rgba(255, 255, 255, 0.1)', borderRadius: '3px', overflow: 'hidden' }}>
+                          <div style={{ width: `${Math.max(activeCourse.progress, activeCourse.isContinue ? 15 : 0)}%`, height: '100%', background: activeCourse.isContinue ? '#38bdf8' : '#34d399' }} />
+                        </div>
+                        <span style={{ fontSize: '0.75rem', color: isLight ? '#5D7192' : '#cbd5e1' }}>{activeCourse.lessonsDone} / {activeCourse.totalLessons} lessons</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <button
+                    onClick={() => navigate('/my-subjects')}
+                    style={{
+                      padding: '11px 24px',
+                      borderRadius: '9999px',
+                      background: activeCourse.isContinue
+                        ? 'linear-gradient(90deg, #36C7F4 0%, #4F8CFF 50%, #8B6CFF 100%)'
+                        : 'linear-gradient(90deg, #06b6d4 0%, #10b981 100%)',
+                      color: '#ffffff',
+                      fontWeight: 700,
+                      fontSize: '0.88rem',
+                      border: 'none',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '8px',
+                      boxShadow: activeCourse.isContinue
+                        ? '0 6px 20px rgba(79, 140, 255, 0.35)'
+                        : '0 6px 20px rgba(6, 182, 212, 0.4)'
+                    }}
+                  >
+                    {activeCourse.isContinue ? 'Continue' : 'Start Lesson'} <ArrowRight size={16} />
+                  </button>
+                </div>
+              </>
+            ) : (
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                flexWrap: 'wrap',
+                gap: '16px'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
                   <div style={{
-                    position: 'absolute',
-                    width: '32px',
-                    height: '32px',
-                    borderRadius: '50%',
-                    background: 'rgba(99, 102, 241, 0.85)',
-                    backdropFilter: 'blur(8px)',
+                    width: '44px',
+                    height: '44px',
+                    borderRadius: '14px',
+                    background: isLight ? 'rgba(99, 102, 241, 0.12)' : 'rgba(99, 102, 241, 0.25)',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
-                    boxShadow: '0 0 15px rgba(99, 102, 241, 0.6)'
+                    color: '#6366f1'
                   }}>
-                    <Play size={14} color="#ffffff" style={{ marginLeft: '2px' }} />
+                    <BookOpen size={22} />
+                  </div>
+                  <div>
+                    <h4 style={{ margin: '0 0 4px 0', fontSize: '1.05rem', fontWeight: 800, color: isLight ? '#18345F' : '#ffffff' }}>
+                      No Courses Enrolled Yet
+                    </h4>
+                    <p style={{ margin: 0, fontSize: '0.82rem', color: isLight ? '#5D7192' : '#94a3b8' }}>
+                      Enroll in courses to track lessons, watch interactive video tutorials, and monitor completion progress.
+                    </p>
                   </div>
                 </div>
-
-                <div>
-                  <strong style={{ display: 'block', fontSize: '1.05rem', color: isLight ? '#18345F' : '#ffffff', marginBottom: '4px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '320px' }} title={activeCourse.title}>
-                    {activeCourse.title}
-                  </strong>
-                  <span style={{ fontSize: '0.8rem', color: isLight ? '#5D7192' : '#94a3b8', display: 'block', marginBottom: '10px' }}>{activeCourse.subtitle}</span>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                    <div style={{ width: '140px', height: '5px', background: isLight ? 'rgba(0, 0, 0, 0.08)' : 'rgba(255, 255, 255, 0.1)', borderRadius: '3px', overflow: 'hidden' }}>
-                      <div style={{ width: `${Math.max(activeCourse.progress, activeCourse.isContinue ? 15 : 0)}%`, height: '100%', background: activeCourse.isContinue ? '#38bdf8' : '#34d399' }} />
-                    </div>
-                    <span style={{ fontSize: '0.75rem', color: isLight ? '#5D7192' : '#cbd5e1' }}>{activeCourse.lessonsDone} / {activeCourse.totalLessons} lessons</span>
-                  </div>
-                </div>
+                <button
+                  onClick={() => navigate('/my-subjects')}
+                  style={{
+                    padding: '10px 22px',
+                    borderRadius: '9999px',
+                    background: 'linear-gradient(90deg, #6366f1 0%, #8b5cf6 100%)',
+                    color: '#ffffff',
+                    fontWeight: 700,
+                    fontSize: '0.86rem',
+                    border: 'none',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    boxShadow: '0 4px 14px rgba(99, 102, 241, 0.35)'
+                  }}
+                >
+                  Explore Courses <ArrowRight size={15} />
+                </button>
               </div>
-
-              {/* Continue / Start Button */}
-              <button
-                onClick={() => navigate('/my-subjects')}
-                style={{
-                  padding: '11px 24px',
-                  borderRadius: '9999px',
-                  background: activeCourse.isContinue
-                    ? 'linear-gradient(90deg, #36C7F4 0%, #4F8CFF 50%, #8B6CFF 100%)'
-                    : 'linear-gradient(90deg, #06b6d4 0%, #10b981 100%)',
-                  color: '#ffffff',
-                  fontWeight: 700,
-                  fontSize: '0.88rem',
-                  border: 'none',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '8px',
-                  boxShadow: activeCourse.isContinue
-                    ? '0 6px 20px rgba(79, 140, 255, 0.35)'
-                    : '0 6px 20px rgba(6, 182, 212, 0.4)'
-                }}
-              >
-                {activeCourse.isContinue ? 'Continue' : 'Start Lesson'} <ArrowRight size={16} />
-              </button>
-            </div>
+            )}
           </div>
 
           {/* E. MY SMART NOTES DASHBOARD WIDGET */}
@@ -730,72 +595,106 @@ export const EduNovaPixelPerfectDashboard = () => {
               </button>
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '12px' }}>
-              {(
-                {
-                  school: [
-                    { topic: 'Trigonometric Applications', subject: 'Mathematics', accuracy: '58%', color: '#fb7185' },
-                    { topic: 'Refractive Index & Lens Formula', subject: 'Physics (Science)', accuracy: '64%', color: '#f59e0b' }
-                  ],
-                  college: [
-                    { topic: 'BCNF Normalization & SQL Joins', subject: 'Database Management Systems', accuracy: '58%', color: '#fb7185' },
-                    { topic: 'Process Deadlocks & Semaphores', subject: 'Operating Systems', accuracy: '64%', color: '#f59e0b' }
-                  ],
-                  exam: [
-                    { topic: 'Time, Speed & Distance Drills', subject: 'Quantitative Aptitude', accuracy: '58%', color: '#fb7185' },
-                    { topic: 'Syllogisms & Analytical Puzzles', subject: 'Logical Reasoning & DI', accuracy: '64%', color: '#f59e0b' }
-                  ],
-                  skills: [
-                    { topic: 'Event Loop & Memory Leaks', subject: 'Node.js & Backend Systems', accuracy: '58%', color: '#fb7185' },
-                    { topic: 'Redux Toolkit & State Tuning', subject: 'React Architecture & Frontend', accuracy: '64%', color: '#f59e0b' }
-                  ]
-                }[activeTrackTab] || [
-                  { topic: 'Trigonometric Applications', subject: 'Mathematics', accuracy: '58%', color: '#fb7185' },
-                  { topic: 'Refractive Index & Lens Formula', subject: 'Physics (Science)', accuracy: '64%', color: '#f59e0b' }
-                ]
-              ).map((item) => (
-                <div
-                  key={item.topic}
-                  style={{
-                    padding: '14px 16px',
-                    borderRadius: '16px',
-                    background: isLight ? 'rgba(255, 255, 255, 0.75)' : 'rgba(255, 255, 255, 0.04)',
-                    border: isLight ? '1px solid rgba(220, 230, 245, 0.8)' : '1px solid rgba(255, 255, 255, 0.1)',
+            {weakTopicsList.length === 0 ? (
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                flexWrap: 'wrap',
+                gap: '14px',
+                padding: '16px 20px',
+                borderRadius: '16px',
+                background: isLight ? 'rgba(255, 255, 255, 0.7)' : 'rgba(255, 255, 255, 0.04)',
+                border: isLight ? '1px dashed rgba(245, 158, 11, 0.35)' : '1px dashed rgba(245, 158, 11, 0.25)'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                  <div style={{
+                    width: '38px',
+                    height: '38px',
+                    borderRadius: '12px',
+                    background: 'rgba(245, 158, 11, 0.15)',
                     display: 'flex',
-                    flexDirection: 'column',
-                    justifyContent: 'space-between',
-                    gap: '10px'
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    color: '#f59e0b'
+                  }}>
+                    <Target size={20} />
+                  </div>
+                  <div>
+                    <strong style={{ display: 'block', fontSize: '0.94rem', color: isLight ? '#18345F' : '#ffffff' }}>
+                      No Weak Topics Identified Yet
+                    </strong>
+                    <span style={{ fontSize: '0.78rem', color: isLight ? '#5D7192' : '#94a3b8' }}>
+                      Complete quizzes and exercises to let Sage AI calibrate your accuracy radar.
+                    </span>
+                  </div>
+                </div>
+                <button
+                  onClick={() => navigate('/my-subjects')}
+                  style={{
+                    padding: '8px 18px',
+                    borderRadius: '9999px',
+                    background: 'linear-gradient(135deg, #f59e0b 0%, #ec4899 100%)',
+                    color: '#ffffff',
+                    fontSize: '0.8rem',
+                    fontWeight: 700,
+                    border: 'none',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    boxShadow: '0 4px 12px rgba(245, 158, 11, 0.3)'
                   }}
                 >
-                  <div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
-                      <span style={{ fontSize: '0.72rem', color: item.color, fontWeight: 800, textTransform: 'uppercase' }}>Focus Required</span>
-                      <span style={{ fontSize: '0.78rem', color: isLight ? '#18345F' : '#ffffff', fontWeight: 800, background: isLight ? 'rgba(0,0,0,0.05)' : 'rgba(255,255,255,0.08)', padding: '2px 8px', borderRadius: '999px' }}>{item.accuracy}</span>
-                    </div>
-                    <strong style={{ display: 'block', fontSize: '0.9rem', color: isLight ? '#18345F' : '#ffffff', marginBottom: '2px' }}>{item.topic}</strong>
-                    <span style={{ fontSize: '0.75rem', color: isLight ? '#5D7192' : '#94a3b8' }}>{item.subject}</span>
-                  </div>
-
-                  <button
-                    onClick={() => handlePromptClick(`Generate a diagnostic quiz on ${item.topic} in ${item.subject}`)}
+                  Take Practice Quiz <ArrowRight size={14} />
+                </button>
+              </div>
+            ) : (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '12px' }}>
+                {weakTopicsList.map((item) => (
+                  <div
+                    key={item.topic}
                     style={{
-                      padding: '7px 12px',
-                      borderRadius: '10px',
-                      background: 'rgba(99, 102, 241, 0.15)',
-                      border: '1px solid rgba(99, 102, 241, 0.35)',
-                      color: '#6366f1',
-                      fontSize: '0.76rem',
-                      fontWeight: 700,
-                      cursor: 'pointer',
-                      textAlign: 'center',
-                      transition: 'all 0.2s ease'
+                      padding: '14px 16px',
+                      borderRadius: '16px',
+                      background: isLight ? 'rgba(255, 255, 255, 0.75)' : 'rgba(255, 255, 255, 0.04)',
+                      border: isLight ? '1px solid rgba(220, 230, 245, 0.8)' : '1px solid rgba(255, 255, 255, 0.1)',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      justifyContent: 'space-between',
+                      gap: '10px'
                     }}
                   >
-                    ✨ Practice Quiz with Sage AI
-                  </button>
-                </div>
-              ))}
-            </div>
+                    <div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                        <span style={{ fontSize: '0.72rem', color: item.color || '#fb7185', fontWeight: 800, textTransform: 'uppercase' }}>Focus Required</span>
+                        <span style={{ fontSize: '0.78rem', color: isLight ? '#18345F' : '#ffffff', fontWeight: 800, background: isLight ? 'rgba(0,0,0,0.05)' : 'rgba(255,255,255,0.08)', padding: '2px 8px', borderRadius: '999px' }}>{item.accuracy || '60%'}</span>
+                      </div>
+                      <strong style={{ display: 'block', fontSize: '0.9rem', color: isLight ? '#18345F' : '#ffffff', marginBottom: '2px' }}>{item.topic}</strong>
+                      <span style={{ fontSize: '0.75rem', color: isLight ? '#5D7192' : '#94a3b8' }}>{item.subject || 'General'}</span>
+                    </div>
+
+                    <button
+                      onClick={() => handlePromptClick(`Generate a diagnostic quiz on ${item.topic} in ${item.subject || 'this subject'}`)}
+                      style={{
+                        padding: '7px 12px',
+                        borderRadius: '10px',
+                        background: 'rgba(99, 102, 241, 0.15)',
+                        border: '1px solid rgba(99, 102, 241, 0.35)',
+                        color: '#6366f1',
+                        fontSize: '0.76rem',
+                        fontWeight: 700,
+                        cursor: 'pointer',
+                        textAlign: 'center',
+                        transition: 'all 0.2s ease'
+                      }}
+                    >
+                      ✨ Practice Quiz with Sage AI
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
 
@@ -949,72 +848,90 @@ export const EduNovaPixelPerfectDashboard = () => {
               </button>
             </div>
 
-            {/* Schedule Items List */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-              {(
-                {
-                  school: [
-                    { time: '09:00 AM', title: 'Mathematics – Trigonometry', color: '#38bdf8', status: 'Live Now', action: () => navigate('/my-subjects') },
-                    { time: '11:00 AM', title: 'Physics (Science) – Optics', color: '#a855f7', status: 'Upcoming', action: () => handlePromptClick('Give me 5 physics numerical questions') },
-                    { time: '02:00 PM', title: 'Study Planner Session', color: '#34d399', status: 'Scheduled', action: () => navigate('/study-planner') },
-                    { time: '04:00 PM', title: 'Doubt Solving (Sage AI)', color: '#fbbf24', status: 'AI Session', action: () => navigate('/ai-assistant') }
-                  ],
-                  college: [
-                    { time: '09:00 AM', title: 'Data Structures – AVL Trees', color: '#38bdf8', status: 'Live Now', action: () => navigate('/my-subjects') },
-                    { time: '11:00 AM', title: 'Operating Systems – Semaphores', color: '#a855f7', status: 'Upcoming', action: () => handlePromptClick('Explain semaphores in OS') },
-                    { time: '02:00 PM', title: 'DBMS SQL Joins Practice', color: '#34d399', status: 'Scheduled', action: () => navigate('/xr-studio') },
-                    { time: '04:00 PM', title: 'Computer Networks Lab', color: '#fbbf24', status: 'AI Session', action: () => navigate('/ai-assistant') }
-                  ],
-                  exam: [
-                    { time: '09:00 AM', title: 'Quant Aptitude – Speed Drill', color: '#38bdf8', status: 'Live Now', action: () => navigate('/my-subjects') },
-                    { time: '11:00 AM', title: 'Logical Reasoning – Mock Test', color: '#a855f7', status: 'Upcoming', action: () => handlePromptClick('Give 5 logical reasoning questions') },
-                    { time: '02:00 PM', title: 'Data Interpretation Caselets', color: '#34d399', status: 'Scheduled', action: () => navigate('/study-planner') },
-                    { time: '04:00 PM', title: 'Verbal Ability – RC Practice', color: '#fbbf24', status: 'AI Session', action: () => navigate('/ai-assistant') }
-                  ],
-                  skills: [
-                    { time: '09:00 AM', title: 'React 19 – Hooks & State Lab', color: '#38bdf8', status: 'Live Now', action: () => navigate('/my-subjects') },
-                    { time: '11:00 AM', title: 'Node.js – Express Microservices', color: '#a855f7', status: 'Upcoming', action: () => handlePromptClick('How to optimize Express APIs') },
-                    { time: '02:00 PM', title: 'PostgreSQL – Query Tuning', color: '#34d399', status: 'Scheduled', action: () => navigate('/xr-studio') },
-                    { time: '04:00 PM', title: 'System Design Architecture', color: '#fbbf24', status: 'AI Session', action: () => navigate('/ai-assistant') }
-                  ]
-                }[activeTrackTab] || [
-                  { time: '09:00 AM', title: 'Mathematics – Trigonometry', color: '#38bdf8', status: 'Live Now', action: () => navigate('/my-subjects') },
-                  { time: '11:00 AM', title: 'Physics (Science) – Optics', color: '#a855f7', status: 'Upcoming', action: () => handlePromptClick('Give me 5 physics numerical questions') },
-                  { time: '02:00 PM', title: 'Study Planner Session', color: '#34d399', status: 'Scheduled', action: () => navigate('/study-planner') },
-                  { time: '04:00 PM', title: 'Doubt Solving (Sage AI)', color: '#fbbf24', status: 'AI Session', action: () => navigate('/ai-assistant') }
-                ]
-              ).map((sch) => (
-                <div
-                  key={sch.title}
-                  onClick={sch.action}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    padding: '10px 12px',
-                    borderRadius: '14px',
-                    background: isLight ? 'rgba(255, 255, 255, 0.75)' : 'rgba(255, 255, 255, 0.05)',
-                    border: isLight ? '1px solid rgba(220, 230, 245, 0.8)' : '1px solid rgba(255, 255, 255, 0.1)',
-                    cursor: 'pointer',
-                    transition: 'all 0.2s ease'
-                  }}
-                  onMouseEnter={(e) => e.currentTarget.style.background = isLight ? 'rgba(235, 243, 255, 0.9)' : 'rgba(255, 255, 255, 0.09)'}
-                  onMouseLeave={(e) => e.currentTarget.style.background = isLight ? 'rgba(255, 255, 255, 0.75)' : 'rgba(255, 255, 255, 0.05)'}
-                >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', overflow: 'hidden' }}>
-                    <span style={{ color: isLight ? '#5D7192' : '#94a3b8', fontSize: '0.74rem', width: '65px', fontWeight: 600, flexShrink: 0 }}>{sch.time}</span>
-                    <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: sch.color, flexShrink: 0, boxShadow: `0 0 10px ${sch.color}` }} />
-                    <span style={{ color: isLight ? '#18345F' : '#ffffff', fontWeight: 600, fontSize: '0.84rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{sch.title}</span>
-                  </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    <span style={{ fontSize: '0.68rem', padding: '2px 8px', borderRadius: '999px', background: `${sch.color}20`, color: isLight ? '#18345F' : sch.color, fontWeight: 700 }}>
-                      {sch.status}
-                    </span>
-                    <ChevronRight size={14} color={isLight ? '#5D7192' : '#94a3b8'} />
-                  </div>
+            {/* Schedule Items List or Empty State */}
+            {todaysSchedule.length === 0 ? (
+              <div style={{
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center',
+                padding: '24px 16px',
+                textAlign: 'center',
+                borderRadius: '16px',
+                background: isLight ? 'rgba(255, 255, 255, 0.6)' : 'rgba(255, 255, 255, 0.03)',
+                border: isLight ? '1px dashed rgba(34, 211, 238, 0.35)' : '1px dashed rgba(34, 211, 238, 0.2)',
+                gap: '8px'
+              }}>
+                <div style={{
+                  width: '36px',
+                  height: '36px',
+                  borderRadius: '12px',
+                  background: 'rgba(34, 211, 238, 0.15)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  color: '#22d3ee'
+                }}>
+                  <Calendar size={18} />
                 </div>
-              ))}
-            </div>
+                <strong style={{ fontSize: '0.9rem', color: isLight ? '#18345F' : '#ffffff' }}>
+                  No Sessions Scheduled Today
+                </strong>
+                <p style={{ margin: 0, fontSize: '0.76rem', color: isLight ? '#5D7192' : '#94a3b8', maxWidth: '240px' }}>
+                  Plan your focus blocks to maintain your streak.
+                </p>
+                <button
+                  onClick={() => navigate('/study-planner')}
+                  style={{
+                    marginTop: '4px',
+                    padding: '6px 14px',
+                    borderRadius: '9999px',
+                    background: 'rgba(34, 211, 238, 0.2)',
+                    border: '1px solid rgba(34, 211, 238, 0.4)',
+                    color: isLight ? '#0891b2' : '#22d3ee',
+                    fontSize: '0.76rem',
+                    fontWeight: 700,
+                    cursor: 'pointer'
+                  }}
+                >
+                  + Schedule Session
+                </button>
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                {todaysSchedule.map((sch, sIdx) => (
+                  <div
+                    key={sch.title + sIdx}
+                    onClick={sch.action}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      padding: '10px 12px',
+                      borderRadius: '14px',
+                      background: isLight ? 'rgba(255, 255, 255, 0.75)' : 'rgba(255, 255, 255, 0.05)',
+                      border: isLight ? '1px solid rgba(220, 230, 245, 0.8)' : '1px solid rgba(255, 255, 255, 0.1)',
+                      cursor: 'pointer',
+                      transition: 'all 0.2s ease'
+                    }}
+                    onMouseEnter={(e) => e.currentTarget.style.background = isLight ? 'rgba(235, 243, 255, 0.9)' : 'rgba(255, 255, 255, 0.09)'}
+                    onMouseLeave={(e) => e.currentTarget.style.background = isLight ? 'rgba(255, 255, 255, 0.75)' : 'rgba(255, 255, 255, 0.05)'}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', overflow: 'hidden' }}>
+                      <span style={{ color: isLight ? '#5D7192' : '#94a3b8', fontSize: '0.74rem', width: '65px', fontWeight: 600, flexShrink: 0 }}>{sch.time}</span>
+                      <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: sch.color, flexShrink: 0, boxShadow: `0 0 10px ${sch.color}` }} />
+                      <span style={{ color: isLight ? '#18345F' : '#ffffff', fontWeight: 600, fontSize: '0.84rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{sch.title}</span>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <span style={{ fontSize: '0.68rem', padding: '2px 8px', borderRadius: '999px', background: `${sch.color}20`, color: isLight ? '#18345F' : sch.color, fontWeight: 700 }}>
+                        {sch.status}
+                      </span>
+                      <ChevronRight size={14} color={isLight ? '#5D7192' : '#94a3b8'} />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* C. PROGRESS OVERVIEW (4 CIRCULAR SVG GAUGES) */}
@@ -1156,74 +1073,98 @@ export const EduNovaPixelPerfectDashboard = () => {
                   Pending Tasks & Assignments
                 </h3>
               </div>
-              <span style={{ fontSize: '0.72rem', padding: '2px 8px', borderRadius: '12px', background: 'rgba(239, 68, 68, 0.15)', color: '#ef4444', fontWeight: 700 }}>
-                {
-                  { school: '3 Due', college: '4 Due', exam: '2 Due', skills: '3 Due' }[activeTrackTab] || '3 Due'
-                }
+              <span style={{ fontSize: '0.72rem', padding: '2px 8px', borderRadius: '12px', background: pendingTasksList.length > 0 ? 'rgba(239, 68, 68, 0.15)' : 'rgba(16, 185, 129, 0.15)', color: pendingTasksList.length > 0 ? '#ef4444' : '#10b981', fontWeight: 700 }}>
+                {pendingTasksList.length} Due
               </span>
             </div>
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-              {(
-                {
-                  school: [
-                    { title: 'Physics Optics Lab Report', due: 'Tomorrow 5 PM', tag: 'High Priority', path: '/xr-studio', color: '#ef4444' },
-                    { title: 'Calculus Definite Integration HW', due: 'In 2 days', tag: 'Homework', path: '/my-subjects', color: '#38bdf8' },
-                    { title: 'Organic Chemistry Reactions Quiz', due: 'Friday', tag: 'Revision', path: '/ai-assistant', color: '#a855f7' }
-                  ],
-                  college: [
-                    { title: 'Data Structures AVL Tree Code', due: 'Tonight 11:59 PM', tag: 'Urgent', path: '/my-subjects', color: '#ef4444' },
-                    { title: 'DBMS 3NF Normalization Case Study', due: 'Tomorrow', tag: 'Project', path: '/my-subjects', color: '#38bdf8' },
-                    { title: 'OS Semaphore Synchronization Lab', due: 'In 3 days', tag: 'XR Lab', path: '/xr-studio', color: '#10b981' }
-                  ],
-                  exam: [
-                    { title: 'JEE Physics Mechanics Speed Test', due: 'Today 6 PM', tag: 'Mock Exam', path: '/my-subjects', color: '#ef4444' },
-                    { title: 'Quant Aptitude 50-Question Drill', due: 'Tomorrow', tag: 'Practice', path: '/study-planner', color: '#f59e0b' }
-                  ],
-                  skills: [
-                    { title: 'React 19 Custom Hooks Project', due: 'Tomorrow', tag: 'Coding Lab', path: '/my-subjects', color: '#38bdf8' },
-                    { title: 'Node.js Express Microservice API', due: 'In 2 days', tag: 'Homework', path: '/my-subjects', color: '#a855f7' },
-                    { title: 'System Design Architecture Notes', due: 'Friday', tag: 'Reading', path: '/constellation', color: '#10b981' }
-                  ]
-                }[activeTrackTab] || [
-                  { title: 'Physics Optics Lab Report', due: 'Tomorrow 5 PM', tag: 'High Priority', path: '/xr-studio', color: '#ef4444' },
-                  { title: 'Calculus Definite Integration HW', due: 'In 2 days', tag: 'Homework', path: '/my-subjects', color: '#38bdf8' }
-                ]
-              ).map((task, idx) => (
-                <div
-                  key={idx}
-                  onClick={() => navigate(task.path)}
+            {/* Tasks List or Empty State */}
+            {pendingTasksList.length === 0 ? (
+              <div style={{
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center',
+                padding: '24px 16px',
+                textAlign: 'center',
+                borderRadius: '16px',
+                background: isLight ? 'rgba(255, 255, 255, 0.6)' : 'rgba(255, 255, 255, 0.03)',
+                border: isLight ? '1px dashed rgba(16, 185, 129, 0.35)' : '1px dashed rgba(16, 185, 129, 0.2)',
+                gap: '8px'
+              }}>
+                <div style={{
+                  width: '36px',
+                  height: '36px',
+                  borderRadius: '12px',
+                  background: 'rgba(16, 185, 129, 0.15)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  color: '#10b981'
+                }}>
+                  <CheckCircle2 size={18} />
+                </div>
+                <strong style={{ fontSize: '0.9rem', color: isLight ? '#18345F' : '#ffffff' }}>
+                  All Caught Up!
+                </strong>
+                <p style={{ margin: 0, fontSize: '0.76rem', color: isLight ? '#5D7192' : '#94a3b8', maxWidth: '240px' }}>
+                  No pending assignments or overdue tasks for this track.
+                </p>
+                <button
+                  onClick={() => navigate('/study-planner')}
                   style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    padding: '10px 12px',
-                    borderRadius: '14px',
-                    background: isLight ? 'rgba(255, 255, 255, 0.75)' : 'rgba(255, 255, 255, 0.04)',
-                    border: isLight ? '1px solid rgba(220, 230, 245, 0.8)' : '1px solid rgba(255, 255, 255, 0.08)',
-                    cursor: 'pointer',
-                    transition: 'all 0.2s ease'
+                    marginTop: '4px',
+                    padding: '6px 14px',
+                    borderRadius: '9999px',
+                    background: 'rgba(16, 185, 129, 0.2)',
+                    border: '1px solid rgba(16, 185, 129, 0.4)',
+                    color: isLight ? '#059669' : '#10b981',
+                    fontSize: '0.76rem',
+                    fontWeight: 700,
+                    cursor: 'pointer'
                   }}
-                  onMouseEnter={(e) => e.currentTarget.style.background = isLight ? 'rgba(235, 243, 255, 0.9)' : 'rgba(255, 255, 255, 0.08)'}
-                  onMouseLeave={(e) => e.currentTarget.style.background = isLight ? 'rgba(255, 255, 255, 0.75)' : 'rgba(255, 255, 255, 0.04)'}
                 >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0 }}>
-                    <CheckCircle2 size={16} color={task.color} style={{ flexShrink: 0 }} />
-                    <div style={{ minWidth: 0 }}>
-                      <div style={{ fontSize: '0.84rem', fontWeight: 600, color: isLight ? '#18345F' : '#ffffff', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        {task.title}
-                      </div>
-                      <div style={{ fontSize: '0.72rem', color: isLight ? '#5D7192' : '#94a3b8' }}>
-                        {task.due}
+                  + Add Task
+                </button>
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                {pendingTasksList.map((task) => (
+                  <div
+                    key={task.id}
+                    onClick={() => navigate('/study-planner')}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      padding: '10px 12px',
+                      borderRadius: '14px',
+                      background: isLight ? 'rgba(255, 255, 255, 0.75)' : 'rgba(255, 255, 255, 0.04)',
+                      border: isLight ? '1px solid rgba(220, 230, 245, 0.8)' : '1px solid rgba(255, 255, 255, 0.08)',
+                      cursor: 'pointer',
+                      transition: 'all 0.2s ease'
+                    }}
+                    onMouseEnter={(e) => e.currentTarget.style.background = isLight ? 'rgba(235, 243, 255, 0.9)' : 'rgba(255, 255, 255, 0.08)'}
+                    onMouseLeave={(e) => e.currentTarget.style.background = isLight ? 'rgba(255, 255, 255, 0.75)' : 'rgba(255, 255, 255, 0.04)'}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0 }}>
+                      <CheckCircle2 size={16} color={task.isImportant ? '#ef4444' : '#38bdf8'} style={{ flexShrink: 0 }} />
+                      <div style={{ minWidth: 0 }}>
+                        <div style={{ fontSize: '0.84rem', fontWeight: 600, color: isLight ? '#18345F' : '#ffffff', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {task.title}
+                        </div>
+                        <div style={{ fontSize: '0.72rem', color: isLight ? '#5D7192' : '#94a3b8' }}>
+                          {task.dueDate ? new Date(task.dueDate).toLocaleDateString([], { month: 'short', day: 'numeric' }) : 'No due date'}
+                        </div>
                       </div>
                     </div>
+                    <span style={{ fontSize: '0.68rem', padding: '2px 8px', borderRadius: '999px', background: task.isImportant ? 'rgba(239, 68, 68, 0.2)' : 'rgba(56, 189, 248, 0.2)', color: isLight ? '#18345F' : (task.isImportant ? '#ef4444' : '#38bdf8'), fontWeight: 700, flexShrink: 0 }}>
+                      {task.priority || 'Normal'}
+                    </span>
                   </div>
-                  <span style={{ fontSize: '0.68rem', padding: '2px 8px', borderRadius: '999px', background: `${task.color}20`, color: isLight ? '#18345F' : task.color, fontWeight: 700, flexShrink: 0 }}>
-                    {task.tag}
-                  </span>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* E. DAILY STUDY STREAK & XP LEADERBOARD CARD */}
@@ -1334,45 +1275,95 @@ export const EduNovaPixelPerfectDashboard = () => {
               </button>
             </div>
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-              {[
-                { name: 'Aarav S.', topic: 'Calculus & Optics', match: '98% Match', color: '#10b981' },
-                { name: 'Priya P.', topic: 'React 19 & Node.js', match: '95% Match', color: '#6366f1' },
-                { name: 'Rohan G.', topic: 'DBMS & SQL Practice', match: '91% Match', color: '#06b6d4' }
-              ].map((peer, idx) => (
-                <div
-                  key={idx}
-                  onClick={() => navigate('/skill-marketplace')}
+            {dbExchanges.length === 0 ? (
+              <div style={{
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center',
+                padding: '24px 16px',
+                textAlign: 'center',
+                borderRadius: '16px',
+                background: isLight ? 'rgba(255, 255, 255, 0.6)' : 'rgba(255, 255, 255, 0.03)',
+                border: isLight ? '1px dashed rgba(6, 182, 212, 0.35)' : '1px dashed rgba(6, 182, 212, 0.2)',
+                gap: '8px'
+              }}>
+                <div style={{
+                  width: '36px',
+                  height: '36px',
+                  borderRadius: '12px',
+                  background: 'rgba(6, 182, 212, 0.15)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  color: '#06b6d4'
+                }}>
+                  <Users size={18} />
+                </div>
+                <strong style={{ fontSize: '0.9rem', color: isLight ? '#18345F' : '#ffffff' }}>
+                  No Study Partners Yet
+                </strong>
+                <p style={{ margin: 0, fontSize: '0.76rem', color: isLight ? '#5D7192' : '#94a3b8', maxWidth: '240px' }}>
+                  Connect with fellow learners, exchange skills, and collaborate on study projects.
+                </p>
+                <button
+                  onClick={() => navigate('/skill-exchange')}
                   style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    padding: '8px 12px',
-                    borderRadius: '12px',
-                    background: isLight ? 'rgba(255, 255, 255, 0.75)' : 'rgba(255, 255, 255, 0.04)',
-                    border: isLight ? '1px solid rgba(220, 230, 245, 0.8)' : '1px solid rgba(255, 255, 255, 0.08)',
+                    marginTop: '4px',
+                    padding: '6px 14px',
+                    borderRadius: '9999px',
+                    background: 'rgba(6, 182, 212, 0.2)',
+                    border: '1px solid rgba(6, 182, 212, 0.4)',
+                    color: isLight ? '#0891b2' : '#06b6d4',
+                    fontSize: '0.76rem',
+                    fontWeight: 700,
                     cursor: 'pointer'
                   }}
                 >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                    <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: 'linear-gradient(135deg, #38bdf8, #8b5cf6)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, color: '#fff', fontSize: '0.75rem' }}>
-                      {peer.name[0]}
-                    </div>
-                    <div>
-                      <div style={{ fontSize: '0.84rem', fontWeight: 600, color: isLight ? '#18345F' : '#ffffff' }}>
-                        {peer.name}
+                  Find Study Partners
+                </button>
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                {dbExchanges.map((ex) => {
+                  const partner = ex.senderId === user?.id ? ex.receiver : ex.sender;
+                  const partnerName = partner?.name || 'Study Partner';
+                  return (
+                    <div
+                      key={ex.id}
+                      onClick={() => navigate('/skill-exchange')}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        padding: '8px 12px',
+                        borderRadius: '12px',
+                        background: isLight ? 'rgba(255, 255, 255, 0.75)' : 'rgba(255, 255, 255, 0.04)',
+                        border: isLight ? '1px solid rgba(220, 230, 245, 0.8)' : '1px solid rgba(255, 255, 255, 0.08)',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                        <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: 'linear-gradient(135deg, #38bdf8, #8b5cf6)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, color: '#fff', fontSize: '0.75rem' }}>
+                          {partnerName[0]}
+                        </div>
+                        <div>
+                          <div style={{ fontSize: '0.84rem', fontWeight: 600, color: isLight ? '#18345F' : '#ffffff' }}>
+                            {partnerName}
+                          </div>
+                          <div style={{ fontSize: '0.72rem', color: isLight ? '#5D7192' : '#94a3b8' }}>
+                            {ex.skillOffered} ⇄ {ex.skillWanted}
+                          </div>
+                        </div>
                       </div>
-                      <div style={{ fontSize: '0.72rem', color: isLight ? '#5D7192' : '#94a3b8' }}>
-                        {peer.topic}
-                      </div>
+                      <span style={{ fontSize: '0.7rem', color: ex.status === 'ACCEPTED' ? '#10b981' : '#f59e0b', fontWeight: 700 }}>
+                        {ex.status}
+                      </span>
                     </div>
-                  </div>
-                  <span style={{ fontSize: '0.7rem', color: peer.color, fontWeight: 700 }}>
-                    {peer.match}
-                  </span>
-                </div>
-              ))}
-            </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         </div>
       </div>

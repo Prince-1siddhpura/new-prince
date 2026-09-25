@@ -4,61 +4,22 @@
  * and calculate real Learning Time Intelligence & Study Consistency.
  */
 
+import { activityApi } from '../lib/apiClient';
+
 const STORAGE_KEY = 'edunova_learning_activities';
 
-// Initial seed activities to guarantee rich initial data without hardcoding UI components
-const SEED_ACTIVITIES = [
-  {
-    id: 'act_101',
-    type: 'QUIZ',
-    subject: 'Mathematics',
-    topic: 'Quadratic Equations',
-    durationMinutes: 35,
-    accuracy: 86,
-    timestamp: new Date(Date.now() - 3600000 * 2).toISOString(), // 2 hrs ago
-    xpEarned: 120
-  },
-  {
-    id: 'act_102',
-    type: 'LESSON',
-    subject: 'Physics',
-    topic: 'Light & Refraction',
-    durationMinutes: 45,
-    accuracy: 90,
-    timestamp: new Date(Date.now() - 3600000 * 5).toISOString(),
-    xpEarned: 150
-  },
-  {
-    id: 'act_103',
-    type: 'PRACTICE',
-    subject: 'Chemistry',
-    topic: 'Chemical Reactions',
-    durationMinutes: 22,
-    accuracy: 78,
-    timestamp: new Date(Date.now() - 3600000 * 24).toISOString(), // Yesterday
-    xpEarned: 80
-  },
-  {
-    id: 'act_104',
-    type: 'SIMULATION',
-    subject: 'Biology',
-    topic: 'Human Heart Anatomy 3D',
-    durationMinutes: 30,
-    accuracy: 100,
-    timestamp: new Date(Date.now() - 3600000 * 48).toISOString(), // 2 days ago
-    xpEarned: 140
-  },
-  {
-    id: 'act_105',
-    type: 'REVISION',
-    subject: 'Mathematics',
-    topic: 'Trigonometry Ratios',
-    durationMinutes: 25,
-    accuracy: 84,
-    timestamp: new Date(Date.now() - 3600000 * 72).toISOString(),
-    xpEarned: 95
+export const fetchActivities = async (limit = 50) => {
+  try {
+    const res = await activityApi.getActivities(limit);
+    if (res && res.data && Array.isArray(res.data) && res.data.length > 0) {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(res.data));
+      return res.data;
+    }
+  } catch (err) {
+    console.warn('Failed to fetch learning activities from server:', err.message);
   }
-];
+  return getActivities();
+};
 
 export const getActivities = () => {
   try {
@@ -67,8 +28,9 @@ export const getActivities = () => {
   } catch (e) {
     console.warn('Could not read learning activities', e);
   }
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(SEED_ACTIVITIES));
-  return SEED_ACTIVITIES;
+  // Try to sync in background
+  fetchActivities().catch(() => {});
+  return [];
 };
 
 export const logActivity = (activity) => {
@@ -83,12 +45,26 @@ export const logActivity = (activity) => {
   };
 
   const updated = [newEntry, ...activities];
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(updated.slice(0, 100)));
 
   // Dispatch custom browser event for instant UI sync
   window.dispatchEvent(new CustomEvent('edunova:activity_logged', { detail: newEntry }));
+
+  // Persist to PostgreSQL backend database
+  activityApi.logActivity({
+    type: newEntry.type || 'PRACTICE',
+    subject: newEntry.subject || 'General',
+    topic: newEntry.topic || '',
+    durationMinutes: newEntry.durationMinutes,
+    accuracy: newEntry.accuracy,
+    xpEarned: newEntry.xpEarned
+  }).catch((err) => {
+    console.warn('Could not log learning activity to backend:', err.message);
+  });
+
   return newEntry;
 };
+
 
 /**
  * Calculate total learning time intelligence for today, this week, and this month

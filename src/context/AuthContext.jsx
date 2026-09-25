@@ -43,7 +43,14 @@ export const AuthProvider = ({ children }) => {
 
   useEffect(() => {
     hydrateSession();
-  }, [hydrateSession]);
+
+    const handleUnauthorized = () => {
+      setUser(null);
+    };
+
+    window.addEventListener('edunova:unauthorized', handleUnauthorized);
+    return () => window.removeEventListener('edunova:unauthorized', handleUnauthorized);
+  }, [hydrateSession, setUser]);
 
   /**
    * 1. Login with Email/Phone/Username and Password

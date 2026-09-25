@@ -4,13 +4,30 @@
  */
 
 import { addEvidence } from './skillDNAService';
-import { gamificationApi } from '../lib/apiClient';
+import { labApi } from '../lib/apiClient';
 
 const PROGRESS_STORAGE_KEY = 'edunova_lab_progress';
 const ATTEMPTS_STORAGE_KEY = 'edunova_lab_attempts';
 
 /**
+ * Fetch authoritative user progress from backend database, fallback to cache
+ */
+export const fetchLabProgress = async () => {
+  try {
+    const res = await labApi.getProgress();
+    if (res && res.data) {
+      localStorage.setItem(PROGRESS_STORAGE_KEY, JSON.stringify(res.data));
+      return res.data;
+    }
+  } catch (err) {
+    console.warn('Failed to fetch lab progress from server:', err.message);
+  }
+  return getLabProgress();
+};
+
+/**
  * Get user progress overview (completed labs count, mastery, XP, streak)
+ * Reads immediately from local cache, and syncs from backend asynchronously.
  */
 export const getLabProgress = () => {
   try {
@@ -35,7 +52,23 @@ export const getLabProgress = () => {
 };
 
 /**
- * Get attempt history for a specific lab or overall
+ * Fetch attempts from server, fallback to local cache
+ */
+export const fetchLabAttempts = async (labId = null) => {
+  try {
+    const res = await labApi.getAttempts(labId);
+    if (res && res.data) {
+      localStorage.setItem(ATTEMPTS_STORAGE_KEY, JSON.stringify(res.data));
+      return res.data;
+    }
+  } catch (err) {
+    console.warn('Failed to fetch lab attempts from server:', err.message);
+  }
+  return getLabAttempts(labId);
+};
+
+/**
+ * Get attempt history for a specific lab or overall from cache
  */
 export const getLabAttempts = (labId = null) => {
   try {
@@ -53,7 +86,7 @@ export const getLabAttempts = (labId = null) => {
 
 /**
  * Record a completed lab attempt or experiment run.
- * Automatically emits evidence to Skill DNA and updates subject mastery.
+ * Automatically emits evidence to Skill DNA, updates subject mastery, and persists to PostgreSQL.
  */
 export const recordLabAttempt = ({ labId, labTitle, subject, parameters, results, score = 90, timeSpentMins = 10, notes = '' }) => {
   const currentProgress = getLabProgress();
@@ -72,7 +105,7 @@ export const recordLabAttempt = ({ labId, labTitle, subject, parameters, results
     timestamp: new Date().toISOString()
   };
 
-  // Add to attempts log
+  // Add to attempts log locally for instant UI update
   attempts.unshift(attemptObj);
   localStorage.setItem(ATTEMPTS_STORAGE_KEY, JSON.stringify(attempts.slice(0, 100)));
 
@@ -109,12 +142,24 @@ export const recordLabAttempt = ({ labId, labTitle, subject, parameters, results
 
   localStorage.setItem(PROGRESS_STORAGE_KEY, JSON.stringify(updatedProgress));
 
-  // Award real database XP
-  if (xpEarned > 0) {
-    gamificationApi.addXp(xpEarned, `Virtual Lab Experiment: ${labTitle}`).catch(err => {
-      console.warn('Could not credit lab XP to backend:', err.message);
-    });
-  }
+  // Persist directly to backend PostgreSQL (which also records XP transaction server-side)
+  labApi.recordAttempt({
+    labId,
+    labTitle,
+    subject,
+    parameters,
+    results,
+    score,
+    timeSpentMins,
+    notes
+  }).then((res) => {
+    if (res && res.data) {
+      // Refresh cache from server response
+      fetchLabProgress();
+    }
+  }).catch((err) => {
+    console.warn('Could not record lab attempt to backend:', err.message);
+  });
 
   // --- EMIT REAL EVIDENCE TO SKILL DNA ---
   try {
@@ -148,7 +193,10 @@ export const recordLabAttempt = ({ labId, labTitle, subject, parameters, results
 };
 
 export default {
+  fetchLabProgress,
   getLabProgress,
+  fetchLabAttempts,
   getLabAttempts,
   recordLabAttempt
 };
+

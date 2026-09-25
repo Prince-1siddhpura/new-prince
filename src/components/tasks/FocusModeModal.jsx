@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { X, Play, Pause, RotateCcw, CheckCircle2, Circle, Sparkles, Send, BookOpen } from 'lucide-react';
 import { useTheme } from '../../context/ThemeContext';
+import { activityApi } from '../../lib/apiClient';
 
 export const FocusModeModal = ({ isOpen, onClose, task, onCompleteTask }) => {
   const { theme } = useTheme() || {};
@@ -42,6 +43,23 @@ export const FocusModeModal = ({ isOpen, onClose, task, onCompleteTask }) => {
   }, [isActive, secondsLeft]);
 
   if (!isOpen || !task) return null;
+
+  const handleComplete = async () => {
+    try {
+      const durationMins = Math.max(1, Math.round(((task.estimatedDuration || 25) * 60 - secondsLeft) / 60));
+      activityApi.logActivity({
+        type: 'PRACTICE',
+        subject: task.subject || 'General',
+        topic: task.topic || 'Focus Mode Study',
+        durationMinutes: durationMins,
+        accuracy: 100,
+        xpEarned: task.xpReward || 50,
+      }).catch(() => {});
+    } catch (_) {}
+
+    onCompleteTask(task.id);
+    onClose();
+  };
 
   const formatTime = (totalSec) => {
     const mins = Math.floor(totalSec / 60);
@@ -97,7 +115,7 @@ export const FocusModeModal = ({ isOpen, onClose, task, onCompleteTask }) => {
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
           <button
-            onClick={() => { onCompleteTask(task.id); onClose(); }}
+            onClick={handleComplete}
             style={{
               padding: '10px 22px',
               borderRadius: '9999px',

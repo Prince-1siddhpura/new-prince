@@ -8,9 +8,14 @@ const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
  */
 const verifyGoogleToken = async (idToken) => {
   try {
+    const audienceList = [
+      process.env.GOOGLE_CLIENT_ID,
+      '526721686264-ofhn2er026eej43ee4arn43mntl0h9dr.apps.googleusercontent.com',
+    ].filter(Boolean);
+
     const ticket = await client.verifyIdToken({
       idToken,
-      audience: process.env.GOOGLE_CLIENT_ID,
+      audience: audienceList.length === 1 ? audienceList[0] : audienceList,
     });
 
     const payload = ticket.getPayload();
@@ -23,7 +28,7 @@ const verifyGoogleToken = async (idToken) => {
       emailVerified: payload.email_verified,
     };
   } catch (error) {
-    throw { status: 401, message: 'Invalid Google ID token' };
+    throw { status: 401, message: 'Google Authentication failed: ' + (error.message || 'Invalid or expired token') };
   }
 };
 
@@ -35,6 +40,10 @@ const verifyGoogleToken = async (idToken) => {
  */
 const googleLogin = async (idToken, { role, learnerType } = {}) => {
   const googleData = await verifyGoogleToken(idToken);
+
+  // Security: Prevent privileged role elevation via OAuth
+  const allowedRoles = ['STUDENT', 'INSTRUCTOR', 'PARENT'];
+  const safeRole = (role && allowedRoles.includes(role.toUpperCase())) ? role.toUpperCase() : 'STUDENT';
 
   // 1. Check if user exists by googleId
   let user = await prisma.user.findUnique({
@@ -60,6 +69,7 @@ const googleLogin = async (idToken, { role, learnerType } = {}) => {
         data: {
           googleId: googleData.googleId,
           avatar: user.avatar || googleData.avatar,
+          isEmailVerified: user.isEmailVerified || (googleData.emailVerified ?? true),
         },
         include: { learnerProfile: true },
       });
@@ -74,10 +84,11 @@ const googleLogin = async (idToken, { role, learnerType } = {}) => {
       email: googleData.email,
       googleId: googleData.googleId,
       avatar: googleData.avatar,
-      role: role || 'STUDENT',
+      role: safeRole,
       learnerType: learnerType || 'SCHOOL',
+      isEmailVerified: googleData.emailVerified ?? true,
       // Auto-create learner profile for students
-      ...((!role || role === 'STUDENT') && {
+      ...((safeRole === 'STUDENT') && {
         learnerProfile: {
           create: {
             xp: 0,

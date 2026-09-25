@@ -65,10 +65,22 @@ export const ChatMessage = ({ message, onPromptSelect }) => {
     }
   };
 
-  // Format inline bold text **...**
+  // Escape HTML to prevent Cross-Site Scripting (XSS)
+  const escapeHtml = (text) => {
+    if (!text) return '';
+    return String(text)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;');
+  };
+
+  // Format inline bold text **...** with HTML-safe encoding
   const formatInlineBold = (str) => {
+    const safeStr = escapeHtml(str);
     const boldColor = isLight ? '#18345F' : '#ffffff';
-    return str.replace(/\*\*(.*?)\*\*/g, `<strong style="color: ${boldColor}; font-weight: 800;">$1</strong>`);
+    return safeStr.replace(/\*\*(.*?)\*\*/g, `<strong style="color: ${boldColor}; font-weight: 800;">$1</strong>`);
   };
 
   // Markdown Formatter

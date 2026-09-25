@@ -93,8 +93,8 @@ export const AIAssistantPage = () => {
         subtitle="Your intelligent 24/7 learning system — concept breakdowns, examples, quizzes, and personalized study guidance."
         stats={[
           { label: 'Online 24/7', subtext: 'Neural Assistant', icon: Bot, color: '#38bdf8', iconBg: 'rgba(56, 189, 248, 0.25)' },
-          { label: 'Level 4', subtext: 'XP Rank', icon: Sparkles, color: '#c084fc', iconBg: 'rgba(192, 132, 252, 0.25)' },
-          { label: '3', subtext: 'Learning Goals', isPill: true }
+          { label: learner?.level ? `Level ${learner.level}` : 'Active Learner', subtext: `${learner?.xp || 0} XP Earned`, icon: Sparkles, color: '#c084fc', iconBg: 'rgba(192, 132, 252, 0.25)' },
+          { label: `${learner?.goals?.length || 0}`, subtext: 'Active Goals', icon: Target, color: '#34d399', iconBg: 'rgba(52, 211, 153, 0.25)' }
         ]}
       />
 
@@ -280,47 +280,43 @@ export const AIAssistantPage = () => {
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', fontSize: '0.84rem' }}>
               <div style={{ padding: '10px 12px', borderRadius: '12px', background: 'var(--bg-secondary)', border: '1px solid var(--border-color)' }}>
-                <span style={{ color: 'var(--text-muted)', display: 'block', fontSize: '0.74rem' }}>Current Course:</span>
-                <strong style={{ color: '#fff', fontSize: '0.9rem' }}>Full-Stack Web Engineering</strong>
+                <span style={{ color: 'var(--text-muted)', display: 'block', fontSize: '0.74rem' }}>Curriculum & Program:</span>
+                <strong style={{ color: '#fff', fontSize: '0.9rem' }}>{learner?.grade || learner?.targetExam || learner?.stream || 'Integrated Study Plan'}</strong>
               </div>
 
               <div style={{ padding: '10px 12px', borderRadius: '12px', background: 'var(--bg-secondary)', border: '1px solid var(--border-color)' }}>
-                <span style={{ color: 'var(--text-muted)', display: 'block', fontSize: '0.74rem' }}>Current Topic:</span>
-                <strong style={{ color: '#38bdf8', fontSize: '0.9rem' }}>React Hooks & State Hydration</strong>
+                <span style={{ color: 'var(--text-muted)', display: 'block', fontSize: '0.74rem' }}>Active Learning Track:</span>
+                <strong style={{ color: '#38bdf8', fontSize: '0.9rem' }}>{learnerType ? `${learnerType.toUpperCase()} Track` : 'Academic Track'}</strong>
               </div>
 
               <div style={{ padding: '10px 12px', borderRadius: '12px', background: 'var(--bg-secondary)', border: '1px solid var(--border-color)' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
-                  <span style={{ color: 'var(--text-muted)', fontSize: '0.74rem' }}>Learning Progress:</span>
-                  <strong style={{ color: '#34d399', fontSize: '0.8rem' }}>78%</strong>
+                  <span style={{ color: 'var(--text-muted)', fontSize: '0.74rem' }}>Overall Progress:</span>
+                  <strong style={{ color: '#34d399', fontSize: '0.8rem' }}>{learner?.progressPercentage ?? 0}%</strong>
                 </div>
                 <div style={{ height: '5px', background: 'var(--bg-tertiary)', borderRadius: '9999px', overflow: 'hidden' }}>
-                  <div style={{ width: '78%', height: '100%', background: '#10b981' }} />
+                  <div style={{ width: `${Math.min(100, Math.max(0, learner?.progressPercentage ?? 0))}%`, height: '100%', background: '#10b981' }} />
                 </div>
               </div>
 
-              <div style={{ padding: '10px 12px', borderRadius: '12px', background: 'rgba(244, 63, 94, 0.1)', border: '1px solid rgba(244, 63, 94, 0.25)' }}>
-                <span style={{ color: '#fb7185', fontWeight: 800, fontSize: '0.76rem', display: 'block', marginBottom: '4px' }}>
-                  Target Weak Areas:
-                </span>
-                <ul style={{ paddingLeft: '16px', color: 'var(--text-secondary)', margin: 0, fontSize: '0.78rem' }}>
-                  <li>DBMS Normalization (3NF)</li>
-                  <li>Async Promise Error Recovery</li>
-                </ul>
-              </div>
+              {learner?.weakTopics && learner.weakTopics.length > 0 && (
+                <div style={{ padding: '10px 12px', borderRadius: '12px', background: 'rgba(244, 63, 94, 0.1)', border: '1px solid rgba(244, 63, 94, 0.25)' }}>
+                  <span style={{ color: '#fb7185', fontWeight: 800, fontSize: '0.76rem', display: 'block', marginBottom: '4px' }}>
+                    Focus Review Areas:
+                  </span>
+                  <ul style={{ paddingLeft: '16px', color: 'var(--text-secondary)', margin: 0, fontSize: '0.78rem' }}>
+                    {learner.weakTopics.map((topic, i) => (
+                      <li key={i}>{topic}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
 
               <div style={{ padding: '10px 12px', borderRadius: '12px', background: 'rgba(6, 182, 212, 0.1)', border: '1px solid rgba(6, 182, 212, 0.25)' }}>
                 <span style={{ color: '#38bdf8', fontWeight: 800, fontSize: '0.76rem', display: 'block', marginBottom: '4px' }}>
-                  Recommended Practice:
+                  Weekly Target:
                 </span>
-                <span style={{ color: 'var(--text-secondary)', fontSize: '0.78rem' }}>Express Middleware & REST API Security Diagnostic</span>
-              </div>
-
-              <div style={{ padding: '10px 12px', borderRadius: '12px', background: 'rgba(168, 85, 247, 0.1)', border: '1px solid rgba(168, 85, 247, 0.25)' }}>
-                <span style={{ color: '#c084fc', fontWeight: 800, fontSize: '0.76rem', display: 'block', marginBottom: '4px' }}>
-                  Study Goal:
-                </span>
-                <span style={{ color: 'var(--text-secondary)', fontSize: '0.78rem' }}>Full Stack Developer Career Path (64% Ready)</span>
+                <span style={{ color: 'var(--text-secondary)', fontSize: '0.78rem' }}>{learner?.weeklyTargetHours ? `${learner.weeklyTargetHours} Hours of Active Practice` : 'Consistent Daily Study & Reflection'}</span>
               </div>
             </div>
           </div>

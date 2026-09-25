@@ -1,10 +1,89 @@
 const prisma = require('../config/db');
 
 /**
+ * Helper to extract array of linked usernames from parent record
+ */
+const getLinkedUsernames = (studentUsernameField) => {
+  if (!studentUsernameField) return [];
+  return studentUsernameField
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
+};
+
+/**
+ * Get all linked children for an authenticated parent
+ */
+const getLinkedChildren = async (parentId) => {
+  const parent = await prisma.user.findUnique({
+    where: { id: parentId },
+    select: { id: true, name: true, studentUsername: true, role: true },
+  });
+
+  if (!parent) throw { status: 404, message: 'Parent account not found' };
+
+  const usernames = getLinkedUsernames(parent.studentUsername);
+  if (usernames.length === 0) return [];
+
+  const children = await prisma.user.findMany({
+    where: {
+      role: 'STUDENT',
+      OR: [
+        { email: { in: usernames } },
+        { studentUsername: { in: usernames } },
+        { name: { in: usernames } },
+        { id: { in: usernames } },
+      ],
+    },
+    select: {
+      id: true,
+      name: true,
+      email: true,
+      studentUsername: true,
+      avatar: true,
+      learnerType: true,
+      createdAt: true,
+      learnerProfile: {
+        select: {
+          board: true,
+          degree: true,
+          xp: true,
+          level: true,
+          streakDays: true,
+        },
+      },
+      _count: {
+        select: {
+          subjectProgress: true,
+          courseProgress: true,
+          quizAttempts: true,
+        },
+      },
+    },
+  });
+
+  return children.map((c) => ({
+    id: c.id,
+    name: c.name,
+    email: c.email,
+    studentUsername: c.studentUsername || c.email || c.name,
+    avatar: c.avatar,
+    learnerType: c.learnerType,
+    board: c.learnerProfile?.board || null,
+    degree: c.learnerProfile?.degree || null,
+    level: c.learnerProfile?.level || 1,
+    xp: c.learnerProfile?.xp || 0,
+    streakDays: c.learnerProfile?.streakDays || 0,
+    totalSubjects: c._count.subjectProgress,
+    totalCourses: c._count.courseProgress,
+    totalQuizzes: c._count.quizAttempts,
+  }));
+};
+
+/**
  * Get comprehensive child overview for an authenticated parent
  */
-const getChildOverview = async (parentId) => {
-  // 1. Get parent user
+const getChildOverview = async (parentId, requestedUsername = null) => {
   const parent = await prisma.user.findUnique({
     where: { id: parentId },
     select: { id: true, name: true, studentUsername: true, role: true },
@@ -14,18 +93,39 @@ const getChildOverview = async (parentId) => {
     throw { status: 404, message: 'Parent account not found' };
   }
 
-  if (!parent.studentUsername) {
+  const usernames = getLinkedUsernames(parent.studentUsername);
+  if (usernames.length === 0) {
     throw {
       status: 400,
       message: 'No student username linked to this parent account. Please link your student first.',
     };
   }
 
-  // 2. Find linked student
+  // Determine which student to inspect
+  let targetUsername = usernames[0];
+  if (requestedUsername) {
+    const trimmedReq = requestedUsername.trim();
+    // Check if matches username, email, or id
+    const isLinked = usernames.some((u) => u.toLowerCase() === trimmedReq.toLowerCase());
+    if (!isLinked) {
+      throw {
+        status: 403,
+        message: `Unauthorized: Student "${requestedUsername}" is not linked to your parent account.`,
+      };
+    }
+    targetUsername = trimmedReq;
+  }
+
+  // Find linked student
   const student = await prisma.user.findFirst({
     where: {
-      studentUsername: parent.studentUsername,
       role: 'STUDENT',
+      OR: [
+        { email: { equals: targetUsername, mode: 'insensitive' } },
+        { studentUsername: { equals: targetUsername, mode: 'insensitive' } },
+        { name: { equals: targetUsername, mode: 'insensitive' } },
+        { id: targetUsername },
+      ],
     },
     select: {
       id: true,
@@ -71,11 +171,11 @@ const getChildOverview = async (parentId) => {
   if (!student) {
     throw {
       status: 404,
-      message: `No student found with linked username "${parent.studentUsername}".`,
+      message: `No student found with linked username "${targetUsername}".`,
     };
   }
 
-  // 3. Compute summaries
+  // Summaries
   const totalSubjects = student.subjectProgress.length;
   const avgSubjectProgress = totalSubjects > 0
     ? student.subjectProgress.reduce((sum, sp) => sum + sp.progress, 0) / totalSubjects
@@ -95,11 +195,13 @@ const getChildOverview = async (parentId) => {
       learnerType: student.learnerType,
       memberSince: student.createdAt,
     },
+    availableChildren: usernames,
     academics: {
       board: student.learnerProfile?.board || 'N/A',
       degree: student.learnerProfile?.degree || null,
       goals: student.learnerProfile?.goals || [],
       weakTopics: student.learnerProfile?.weakTopics || [],
+      academicDetails: student.learnerProfile?.academicDetails || null,
       totalSubjects,
       avgSubjectProgress: Math.round(avgSubjectProgress * 10) / 10,
       totalCourses,
@@ -135,4 +237,24 @@ const getChildOverview = async (parentId) => {
   };
 };
 
-module.exports = { getChildOverview };
+/**
+ * Get authorized child profile for a parent (read-only, does not expose parent profile)
+ */
+const getChildProfile = async (parentId, requestedUsername = null) => {
+  const overview = await getChildOverview(parentId, requestedUsername);
+  return {
+    student: overview.student,
+    academics: overview.academics,
+    gamification: overview.gamification,
+    subjects: overview.subjects,
+    courses: overview.courses,
+    availableChildren: overview.availableChildren,
+  };
+};
+
+module.exports = {
+  getChildOverview,
+  getChildProfile,
+  getLinkedChildren,
+  getLinkedUsernames,
+};

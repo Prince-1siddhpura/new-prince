@@ -40,12 +40,16 @@ const SigmaIcon = ({ size = 20, color = "#38bdf8" }) => (
 
 // Robust Icon Renderer to handle Lucide Component, Emoji String, or Fallbacks
 const renderSubjectIcon = (iconInput, color, subjectName = '') => {
+  if (React.isValidElement(iconInput)) {
+    return iconInput;
+  }
+
   if (typeof iconInput === 'function') {
     const IconComp = iconInput;
     try { return <IconComp size={22} color={color} />; } catch (e) {}
   }
 
-  if (typeof iconInput === 'object' && iconInput !== null) {
+  if (typeof iconInput === 'object' && iconInput !== null && iconInput.$$typeof) {
     const IconComp = iconInput;
     try { return <IconComp size={22} color={color} />; } catch (e) {}
   }
@@ -350,12 +354,17 @@ export const MySubjectsWidget = ({
 
   // Fetch live subjects dynamically
   const normalizedTrack = (trackType || 'school').toLowerCase();
-  const liveSubjects = subjectService.getSelectedSubjects(normalizedTrack);
-  const curriculumSubjects = curriculumService.getCurriculumSubjects({ learnerType: normalizedTrack });
+  const liveSubjects = (typeof subjectService?.getSelectedSubjects === 'function')
+    ? (subjectService.getSelectedSubjects(normalizedTrack) || [])
+    : [];
+  const curriculumSubjects = (typeof curriculumService?.getCurriculumSubjects === 'function')
+    ? (curriculumService.getCurriculumSubjects({ learnerType: normalizedTrack }) || [])
+    : [];
 
   // Select subjects array based on custom data matching trackType or fallbacks
   const filteredCustomSubjects = (customSubjects && Array.isArray(customSubjects) && customSubjects.length > 0)
     ? customSubjects.filter(sub => {
+        if (!sub) return false;
         const subTrack = (sub.educationType || sub.subject?.educationType || sub.track || '').toLowerCase();
         return !subTrack || subTrack === normalizedTrack;
       })
@@ -363,9 +372,10 @@ export const MySubjectsWidget = ({
 
   const rawList = (filteredCustomSubjects && filteredCustomSubjects.length > 0)
     ? filteredCustomSubjects
-    : (curriculumSubjects.length > 0 ? curriculumSubjects : (liveSubjects.length > 0 ? liveSubjects : DEFAULT_TRACK_SUBJECTS[normalizedTrack] || DEFAULT_TRACK_SUBJECTS.school));
+    : (curriculumSubjects.length > 0 ? curriculumSubjects : (liveSubjects.length > 0 ? liveSubjects : []));
 
   const subjectList = rawList.map((sub, idx) => {
+    if (!sub) return null;
     const subData = sub.subject || sub;
     const defaultIconMap = [SigmaIcon, Atom, FlaskConical, Dna, BookOpen, Globe];
     const defaultColorMap = ['#38bdf8', '#f59e0b', '#34d399', '#f43f5e', '#c084fc', '#38bdf8'];
@@ -381,9 +391,9 @@ export const MySubjectsWidget = ({
       color: chosenColor,
       bgGlow: sub.bgGlow || defaultBgs[idx % defaultBgs.length],
       borderGlow: sub.borderGlow || chosenColor,
-      icon: sub.icon || defaultIconMap[idx % defaultIconMap.length]
+      icon: sub.icon || subData.icon || defaultIconMap[idx % defaultIconMap.length]
     };
-  });
+  }).filter(Boolean);
 
   const handleViewAll = () => {
     if (onViewAllClick) {
@@ -467,12 +477,67 @@ export const MySubjectsWidget = ({
         </button>
       </div>
 
-      {/* Grid of Subject Cards */}
-      <div style={{
-        display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
-        gap: '18px'
-      }}>
+      {/* Grid of Subject Cards or Empty State */}
+      {subjectList.length === 0 ? (
+        <div style={{
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: '36px 20px',
+          textAlign: 'center',
+          borderRadius: '20px',
+          background: isLight ? 'rgba(255, 255, 255, 0.6)' : 'rgba(255, 255, 255, 0.03)',
+          border: isLight ? '1px dashed rgba(2, 132, 199, 0.25)' : '1px dashed rgba(255, 255, 255, 0.15)',
+          gap: '12px'
+        }}>
+          <div style={{
+            width: '50px',
+            height: '50px',
+            borderRadius: '16px',
+            background: isLight ? 'rgba(2, 132, 199, 0.1)' : 'rgba(56, 189, 248, 0.15)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            color: isLight ? '#0284c7' : '#38bdf8'
+          }}>
+            <BookOpen size={24} />
+          </div>
+          <div>
+            <h4 style={{ margin: '0 0 4px 0', fontSize: '1.05rem', fontWeight: 800, color: isLight ? '#0f172a' : '#ffffff' }}>
+              No Subjects Enrolled Yet
+            </h4>
+            <p style={{ margin: 0, fontSize: '0.84rem', color: isLight ? '#64748b' : '#94a3b8', maxWidth: '380px' }}>
+              Select your curriculum subjects to begin tracking syllabus completion, mastery radar, and practice diagnostics.
+            </p>
+          </div>
+          <button
+            onClick={() => navigate('/my-subjects')}
+            style={{
+              marginTop: '6px',
+              padding: '9px 20px',
+              borderRadius: '9999px',
+              background: 'linear-gradient(135deg, #0284c7 0%, #6366f1 100%)',
+              color: '#ffffff',
+              fontSize: '0.84rem',
+              fontWeight: 700,
+              border: 'none',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              boxShadow: '0 4px 14px rgba(2, 132, 199, 0.35)'
+            }}
+          >
+            Browse & Enroll Subjects <ArrowRight size={14} />
+          </button>
+        </div>
+      ) : (
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+          gap: '18px'
+        }}>
         {subjectList.map((subject) => {
           const percent = Math.min(100, Math.round((subject.score / subject.total) * 100));
 
@@ -561,7 +626,8 @@ export const MySubjectsWidget = ({
             </motion.div>
           );
         })}
-      </div>
+        </div>
+      )}
     </div>
   );
 };

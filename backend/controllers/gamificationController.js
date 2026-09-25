@@ -138,8 +138,24 @@ const getSummary = async (req, res) => {
   }
 };
 
+/**
+ * @desc    Get verified achievements computed strictly from PostgreSQL records
+ * @route   GET /api/gamification/achievements
+ * @access  Private
+ */
+const getAchievements = async (req, res) => {
+  try {
+    const data = await gamificationService.getAchievements(req.user.id);
+    res.json({ success: true, data });
+  } catch (error) {
+    res.status(error.status || 500).json({ success: false, message: error.message });
+  }
+};
+
 module.exports = {
   getMissions, updateMissionProgress, completeMission,
   getXpHistory, updateStreak, getLeaderboard, addXp, getSummary,
+  getAchievements,
 };
+
 

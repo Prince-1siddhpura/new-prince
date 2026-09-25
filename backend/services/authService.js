@@ -16,13 +16,22 @@ const ARGON2_OPTIONS = {
 // ── Token helpers ────────────────────────────────────────────────────────────
 
 const generateToken = (userId, role, tokenVersion = 0) => {
-  return jwt.sign({ id: userId, role, tokenVersion }, process.env.JWT_SECRET, {
-    expiresIn: process.env.JWT_EXPIRES_IN || '7d',
+  return jwt.sign({
+    id: userId,
+    role,
+    tokenVersion,
+    jti: crypto.randomBytes(16).toString('hex'),
+  }, process.env.JWT_SECRET, {
+    expiresIn: process.env.JWT_EXPIRES_IN || '15m',
   });
 };
 
 const generateRefreshToken = (userId, tokenVersion = 0) => {
-  return jwt.sign({ id: userId, tokenVersion }, process.env.JWT_REFRESH_SECRET || process.env.JWT_SECRET, {
+  return jwt.sign({
+    id: userId,
+    tokenVersion,
+    jti: crypto.randomBytes(16).toString('hex'),
+  }, process.env.JWT_REFRESH_SECRET || process.env.JWT_SECRET, {
     expiresIn: process.env.JWT_REFRESH_EXPIRES_IN || '7d',
   });
 };
@@ -501,11 +510,27 @@ const linkParentToStudent = async (parentId, studentUsername, linkCode) => {
     };
   }
 
+  // Fetch existing parent record to append child if multiple children exist
+  const existingParent = await prisma.user.findUnique({
+    where: { id: parentId },
+    select: { studentUsername: true },
+  });
+
+  const existingList = (existingParent?.studentUsername || '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
+
+  if (!existingList.includes(student.studentUsername)) {
+    existingList.push(student.studentUsername);
+  }
+  const combinedUsernames = existingList.join(', ');
+
   // Consume linking code and link parent atomically
   const [parent] = await prisma.$transaction([
     prisma.user.update({
       where: { id: parentId },
-      data: { studentUsername: student.studentUsername },
+      data: { studentUsername: combinedUsernames },
       include: { learnerProfile: true },
     }),
     prisma.user.update({
@@ -527,24 +552,50 @@ const linkParentToStudent = async (parentId, studentUsername, linkCode) => {
 /**
  * Parent or student unlinks the companion monitoring connection
  */
-const unlinkParentStudent = async (userId) => {
+const unlinkParentStudent = async (userId, targetStudentUsername = null) => {
   const user = await prisma.user.findUnique({ where: { id: userId } });
   if (!user) throw { status: 404, message: 'User not found' };
 
   if (user.role === 'PARENT') {
+    if (targetStudentUsername && user.studentUsername) {
+      const remaining = user.studentUsername
+        .split(',')
+        .map((s) => s.trim())
+        .filter((s) => Boolean(s) && s !== targetStudentUsername.trim());
+      await prisma.user.update({
+        where: { id: userId },
+        data: { studentUsername: remaining.length > 0 ? remaining.join(', ') : null },
+      });
+      return { success: true, message: `Student ${targetStudentUsername} unlinked successfully.` };
+    }
+
     await prisma.user.update({
       where: { id: userId },
       data: { studentUsername: null },
     });
-    return { success: true, message: 'Student unlinked successfully.' };
+    return { success: true, message: 'Student(s) unlinked successfully.' };
   }
 
   if (user.role === 'STUDENT' && user.studentUsername) {
     // Unlink any parent monitoring this student
-    await prisma.user.updateMany({
-      where: { studentUsername: user.studentUsername, role: 'PARENT' },
-      data: { studentUsername: null },
+    const parents = await prisma.user.findMany({
+      where: {
+        role: 'PARENT',
+        studentUsername: { contains: user.studentUsername },
+      },
     });
+
+    for (const p of parents) {
+      const remaining = (p.studentUsername || '')
+        .split(',')
+        .map((s) => s.trim())
+        .filter((s) => Boolean(s) && s !== user.studentUsername);
+      await prisma.user.update({
+        where: { id: p.id },
+        data: { studentUsername: remaining.length > 0 ? remaining.join(', ') : null },
+      });
+    }
+
     return { success: true, message: 'Parent unlinked successfully.' };
   }
 

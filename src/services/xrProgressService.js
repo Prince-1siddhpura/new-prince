@@ -1,12 +1,24 @@
-/**
- * EduNova XR Learner Progress & Telemetry Tracking Service
- * Tracks actual user activity: time spent, hotspots viewed, challenges completed, and achievements.
- */
+import { labApi } from '../lib/apiClient';
 
 const STORAGE_KEY = 'edunova_xr_progress_v1';
 const HISTORY_KEY = 'edunova_xr_history_v1';
 
 class XRProgressService {
+  async fetchProgress(modelId) {
+    try {
+      const res = await labApi.getXrProgress(modelId);
+      if (res && res.data) {
+        const all = JSON.parse(localStorage.getItem(STORAGE_KEY)) || {};
+        all[modelId] = res.data;
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(all));
+        return res.data;
+      }
+    } catch (err) {
+      console.warn('Failed to fetch XR progress from server:', err.message);
+    }
+    return this.getProgress(modelId);
+  }
+
   getProgress(modelId) {
     try {
       const data = JSON.parse(localStorage.getItem(STORAGE_KEY)) || {};
@@ -40,6 +52,12 @@ class XRProgressService {
 
       // Also record in recent history
       this.recordHistory(modelId);
+
+      // Async persist to PostgreSQL backend
+      labApi.saveXrProgress(modelId, updated).catch(err => {
+        console.warn('Could not persist XR progress to database:', err.message);
+      });
+
       return updated;
     } catch (e) {
       console.warn('Could not save XR progress:', e);
@@ -68,3 +86,4 @@ class XRProgressService {
 
 export const xrProgressService = new XRProgressService();
 export default xrProgressService;
+

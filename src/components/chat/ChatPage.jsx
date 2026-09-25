@@ -29,6 +29,7 @@ import {
 } from 'lucide-react';
 
 import { useTheme } from '../../context/ThemeContext';
+import { useAuth } from '../../context/AuthContext';
 import {
   getConversationsList,
   getMessagesForConversation,
@@ -37,6 +38,14 @@ import {
   togglePinMessage,
   markConversationAsRead
 } from '../../services/chatService';
+
+import {
+  getSocket,
+  joinConversation,
+  leaveConversation,
+  emitTypingStart,
+  emitTypingStop
+} from '../../lib/socketClient';
 
 import { uploadChatFile } from '../../services/chatFileService';
 import { MessageActionsMenu } from './MessageActionsMenu';
@@ -50,10 +59,13 @@ import { MeetingRoomModal } from '../exchange/MeetingRoomModal';
 export const ChatPage = ({ defaultConversationId = null, onOpenScheduler }) => {
   const { theme } = useTheme() || {};
   const isLight = theme === 'light';
+  const { user } = useAuth();
 
   const [conversations, setConversations] = useState([]);
-  const [activeConversationId, setActiveConversationId] = useState(defaultConversationId || 'conv_rahul');
+  const [activeConversationId, setActiveConversationId] = useState(defaultConversationId || null);
   const [messages, setMessages] = useState([]);
+  const [isLoadingConversations, setIsLoadingConversations] = useState(true);
+  const [isLoadingMessages, setIsLoadingMessages] = useState(false);
   const [filterType, setFilterType] = useState('all'); // 'all' | 'unread' | 'direct' | 'exchange' | 'community' | 'group'
   const [searchQuery, setSearchQuery] = useState('');
 
@@ -122,25 +134,118 @@ export const ChatPage = ({ defaultConversationId = null, onOpenScheduler }) => {
     };
   }, [isResizing]);
 
-  // 1. Initial Load & Listeners
+  // 1. Initial Load: Fetch real conversations and connect socket
   useEffect(() => {
-    const list = getConversationsList();
-    setConversations(list);
-    if (list.length > 0) {
-      const found = list.find(c => c.id === activeConversationId);
-      if (!found) setActiveConversationId(list[0].id);
-    }
+    let isMounted = true;
+    const loadConversations = async () => {
+      setIsLoadingConversations(true);
+      try {
+        const list = await getConversationsList();
+        if (isMounted) {
+          setConversations(list);
+          if (list.length > 0 && !activeConversationId) {
+            setActiveConversationId(list[0].id);
+          }
+        }
+      } catch (err) {
+        console.error('[ChatPage] Load conversations error:', err);
+      } finally {
+        if (isMounted) setIsLoadingConversations(false);
+      }
+    };
+
+    loadConversations();
+    getSocket(); // Initialize authenticated socket
+
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
-  // 2. Fetch Messages on Active Conversation Change
+  // 2. Fetch Messages & Join Socket Room on Active Conversation Change
   useEffect(() => {
-    if (activeConversationId) {
-      const msgs = getMessagesForConversation(activeConversationId);
-      setMessages(msgs);
-      markConversationAsRead(activeConversationId);
-      setConversations(getConversationsList());
-      scrollToBottom();
-    }
+    if (!activeConversationId) return;
+
+    let isMounted = true;
+    setIsLoadingMessages(true);
+
+    // Join Socket.IO conversation room
+    joinConversation(activeConversationId);
+
+    getMessagesForConversation(activeConversationId)
+      .then((msgs) => {
+        if (isMounted) {
+          setMessages(msgs);
+          setIsLoadingMessages(false);
+          markConversationAsRead(activeConversationId);
+          scrollToBottom();
+        }
+      })
+      .catch((err) => {
+        console.error('[ChatPage] Load messages error:', err);
+        if (isMounted) setIsLoadingMessages(false);
+      });
+
+    return () => {
+      isMounted = false;
+      leaveConversation(activeConversationId);
+    };
+  }, [activeConversationId]);
+
+  // 3. Real-time Socket.IO Event Listeners
+  useEffect(() => {
+    const socket = getSocket();
+    if (!socket) return;
+
+    const handleMessageReceived = (msg) => {
+      if (!msg) return;
+
+      // If message belongs to active conversation, append
+      if (msg.conversationId === activeConversationId) {
+        setMessages((prev) => {
+          if (prev.some((m) => m.id === msg.id)) return prev;
+          return [...prev, msg];
+        });
+        scrollToBottom();
+      }
+
+      // Update conversation thread in sidebar
+      setConversations((prev) =>
+        prev.map((c) => {
+          if (c.id === msg.conversationId) {
+            return {
+              ...c,
+              lastMessage: msg.content || msg.text || (msg.attachment ? `Sent attachment: ${msg.attachment.name}` : 'New message'),
+              lastMessageTime: 'Just now',
+              unreadCount: c.id === activeConversationId ? 0 : (c.unreadCount || 0) + 1,
+            };
+          }
+          return c;
+        })
+      );
+    };
+
+    const handleReaction = ({ messageId, reactions }) => {
+      setMessages((prev) =>
+        prev.map((m) => (m.id === messageId ? { ...m, reactions } : m))
+      );
+    };
+
+    const handlePinned = ({ messageId, isPinned }) => {
+      setMessages((prev) =>
+        prev.map((m) => (m.id === messageId ? { ...m, isPinned } : m))
+      );
+    };
+
+    socket.on('message:received', handleMessageReceived);
+    socket.on('message:reaction', handleReaction);
+    socket.on('message:pinned', handlePinned);
+
+    return () => {
+      socket.off('message:received', handleMessageReceived);
+      socket.off('message:reaction', handleReaction);
+      socket.off('message:pinned', handlePinned);
+    };
   }, [activeConversationId]);
 
   const scrollToBottom = () => {
@@ -207,38 +312,47 @@ export const ChatPage = ({ defaultConversationId = null, onOpenScheduler }) => {
   };
 
   // 5. Send Message Handler
-  const handleSendMessage = (e, customText = null) => {
+  const handleSendMessage = async (e, customText = null) => {
     if (e) e.preventDefault();
     const textToSend = customText !== null ? customText : inputText;
     if (!textToSend.trim() && !stagedAttachment) return;
 
-    const newMsg = sendChatMessage({
+    const currentText = textToSend.trim();
+    const currentAttachment = stagedAttachment;
+    const currentReplyTarget = replyTarget;
+
+    setInputText('');
+    setStagedAttachment(null);
+    setReplyTarget(null);
+
+    const savedMsg = await sendChatMessage({
       conversationId: activeConversationId,
-      text: textToSend.trim(),
-      attachment: stagedAttachment,
-      replyTo: replyTarget ? { id: replyTarget.id, text: replyTarget.text, senderName: replyTarget.senderName } : null
+      text: currentText,
+      attachment: currentAttachment,
+      replyTo: currentReplyTarget ? { id: currentReplyTarget.id, text: currentReplyTarget.text, senderName: currentReplyTarget.senderName } : null
     });
 
-    if (newMsg) {
-      setMessages(prev => [...prev, newMsg]);
-      setInputText('');
-      setStagedAttachment(null);
-      setReplyTarget(null);
+    if (savedMsg) {
+      setMessages(prev => {
+        if (prev.some(m => m.id === savedMsg.id)) return prev;
+        return [...prev, savedMsg];
+      });
       scrollToBottom();
     }
   };
 
   // 6. Meeting Call Request Flow
-  const handleConfirmStartMeeting = () => {
+  const handleConfirmStartMeeting = async () => {
     const partner = activeConversation?.participant?.name || 'Peer';
-    const newMsg = sendChatMessage({
+    const myName = user?.name || user?.username || 'Peer Scholar';
+    const newMsg = await sendChatMessage({
       conversationId: activeConversationId,
       type: 'meeting_request',
-      text: `📹 Aarav Shah invited ${partner} to join a live 1-on-1 video session.`,
+      text: `📹 ${myName} invited ${partner} to join a live 1-on-1 video session.`,
       meetingRequest: {
         id: `mtg_${Date.now()}`,
-        hostId: 'current_user',
-        hostName: 'Aarav Shah',
+        hostId: user?.id || 'current_user',
+        hostName: myName,
         participantName: partner,
         participantAvatar: activeConversation?.participant?.avatar,
         status: 'pending',
@@ -247,12 +361,14 @@ export const ChatPage = ({ defaultConversationId = null, onOpenScheduler }) => {
     });
 
     if (newMsg) {
-      setMessages(prev => [...prev, newMsg]);
+      setMessages(prev => {
+        if (prev.some(m => m.id === newMsg.id)) return prev;
+        return [...prev, newMsg];
+      });
       scrollToBottom();
-      // Also trigger open meeting room for host
       setActiveMeetingObj({
-        id: newMsg.meetingRequest.id,
-        title: newMsg.meetingRequest.title,
+        id: newMsg.meetingRequest?.id || `mtg_${Date.now()}`,
+        title: newMsg.meetingRequest?.title || `1-on-1 Session with ${partner}`,
         participantName: partner,
         participantAvatar: activeConversation?.participant?.avatar
       });
@@ -261,19 +377,19 @@ export const ChatPage = ({ defaultConversationId = null, onOpenScheduler }) => {
   };
 
   const handleAcceptMeetingRequest = (msg) => {
-    // Open meeting room for recipient
+    const myName = user?.name || user?.username || 'Peer Scholar';
     setActiveMeetingObj({
       id: msg.meetingRequest?.id || `mtg_${Date.now()}`,
       title: msg.meetingRequest?.title || 'Peer Video Session',
-      participantName: msg.senderName || 'Aarav Shah',
+      participantName: msg.senderName || myName,
       participantAvatar: msg.avatar
     });
     setIsMeetingRoomOpen(true);
   };
 
   // 7. Peer Quiz Flow
-  const handleShareQuizToChat = (quizData) => {
-    const newMsg = sendChatMessage({
+  const handleShareQuizToChat = async (quizData) => {
+    const newMsg = await sendChatMessage({
       conversationId: activeConversationId,
       type: 'peer_quiz',
       text: `🧠 Peer Quiz Challenge: ${quizData.quizTitle} (${quizData.score})`,
@@ -281,7 +397,10 @@ export const ChatPage = ({ defaultConversationId = null, onOpenScheduler }) => {
     });
 
     if (newMsg) {
-      setMessages(prev => [...prev, newMsg]);
+      setMessages(prev => {
+        if (prev.some(m => m.id === newMsg.id)) return prev;
+        return [...prev, newMsg];
+      });
       scrollToBottom();
     }
   };
@@ -289,12 +408,10 @@ export const ChatPage = ({ defaultConversationId = null, onOpenScheduler }) => {
   // 8. Contextual Action Handlers
   const handleReact = (messageId, emoji) => {
     toggleMessageReaction(messageId, emoji);
-    setMessages(getMessagesForConversation(activeConversationId));
   };
 
   const handlePin = (messageId) => {
     togglePinMessage(messageId);
-    setMessages(getMessagesForConversation(activeConversationId));
   };
 
   const handleAskSage = (msg, mode = 'explain') => {
@@ -456,7 +573,11 @@ export const ChatPage = ({ defaultConversationId = null, onOpenScheduler }) => {
 
         {/* Conversations List */}
         <div style={{ flex: 1, overflowY: 'auto', padding: '8px' }}>
-          {filteredConversations.length === 0 ? (
+          {isLoadingConversations ? (
+            <div style={{ textAlign: 'center', padding: '32px 16px', color: isLight ? '#475569' : '#94a3b8' }}>
+              <p style={{ fontSize: '0.85rem' }}>Loading conversations...</p>
+            </div>
+          ) : filteredConversations.length === 0 ? (
             <div style={{ textAlign: 'center', padding: '32px 16px', color: isLight ? '#475569' : '#94a3b8' }}>
               <MessageSquare size={32} color={isLight ? '#64748b' : '#64748b'} style={{ margin: '0 auto 8px auto' }} />
               <p style={{ fontSize: '0.85rem', margin: '0 0 12px 0' }}>
@@ -699,7 +820,11 @@ export const ChatPage = ({ defaultConversationId = null, onOpenScheduler }) => {
 
         {/* Messages Feed */}
         <div style={{ flex: 1, padding: '20px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '16px' }}>
-          {messages.length === 0 ? (
+          {isLoadingMessages ? (
+            <div style={{ textAlign: 'center', padding: '48px 24px', margin: 'auto 0', color: isLight ? '#475569' : '#94a3b8' }}>
+              <p style={{ fontSize: '0.9rem' }}>Loading messages from database...</p>
+            </div>
+          ) : messages.length === 0 ? (
             /* EMPTY FEED STATE WITH SUGGESTIONS */
             <div style={{ textAlign: 'center', padding: '48px 24px', margin: 'auto 0', background: isLight ? 'rgba(255, 255, 255, 0.9)' : 'rgba(12, 16, 36, 0.6)', borderRadius: '24px', border: isLight ? '1px solid rgba(215, 228, 245, 0.9)' : '1px solid rgba(255, 255, 255, 0.12)' }}>
               <Bot size={48} color={isLight ? '#0284c7' : '#06b6d4'} style={{ margin: '0 auto 12px auto' }} />
@@ -729,7 +854,7 @@ export const ChatPage = ({ defaultConversationId = null, onOpenScheduler }) => {
             </div>
           ) : (
             messages.map((m) => {
-              const isMe = m.senderId === 'current_user';
+              const isMe = m.senderId === user?.id || m.senderId === 'current_user';
               const hasReactions = m.reactions && Object.keys(m.reactions).length > 0;
               const isHovered = hoveredMessageId === m.id;
               const isMeetingReq = m.type === 'meeting_request' || m.meetingRequest;

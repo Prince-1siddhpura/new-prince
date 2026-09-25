@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { useLearner } from '../../context/LearnerContext';
+import { getDefaultDashboardRoute } from '../../components/layout/ProtectedRoute';
 import { GoogleAuthButton } from '../../components/auth/GoogleAuthButton';
 import {
   LogIn,
@@ -21,6 +22,7 @@ export const EDUNOVA_ROLES = [
   { id: 'school', label: 'School Student', icon: '🎓', track: 'school', route: '/dashboard/school' },
   { id: 'college', label: 'College Student', icon: '🏛️', track: 'college', route: '/dashboard/college' },
   { id: 'exam', label: 'Competitive Exams', icon: '🎯', track: 'exam', route: '/dashboard/exam' },
+  { id: 'instructor', label: 'Instructor / Faculty', icon: '👨‍🏫', track: 'college', route: '/instructor/dashboard' },
   { id: 'parent', label: 'Parent / Guardian', icon: '🛡️', track: 'school', route: '/parent/dashboard' },
 ];
 
@@ -59,16 +61,23 @@ export const LoginPage = () => {
     setInfo('');
 
     try {
-      if (activeRoleObj.id === 'parent') {
-        // Log in as Parent
-        await login(email, password);
+      const result = await login(email, password);
+      const userRole = result?.user?.role;
+      const targetDashboard = getDefaultDashboardRoute(userRole);
+
+      if (activeRoleObj.id === 'parent' || userRole === 'PARENT') {
         if (updateLearnerType) updateLearnerType('school');
-        navigate('/parent/dashboard');
+        navigate(targetDashboard);
+      } else if (activeRoleObj.id === 'instructor' || userRole === 'INSTRUCTOR') {
+        navigate('/instructor/dashboard');
       } else {
-        // Log in as Student / Learner Role
-        const result = await login(email, password);
         if (updateLearnerType) updateLearnerType(activeRoleObj.track);
-        navigate(activeRoleObj.route || '/dashboard');
+        // If student, allow their selected track route; otherwise route to their role's dashboard
+        if (userRole === 'STUDENT') {
+          navigate(activeRoleObj.route || '/dashboard');
+        } else {
+          navigate(targetDashboard);
+        }
       }
     } catch (err) {
       setError(err.message || 'Failed to login. Please check credentials.');

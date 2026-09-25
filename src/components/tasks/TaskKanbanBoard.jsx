@@ -1,8 +1,8 @@
 import React from 'react';
-import { CheckCircle2, Clock, AlertCircle, Play, MoreVertical, Trash2 } from 'lucide-react';
+import { CheckCircle2, Clock, AlertCircle, Play, MoreVertical, Trash2, Edit3, Award } from 'lucide-react';
 import { useTheme } from '../../context/ThemeContext';
 
-export const TaskKanbanBoard = ({ tasks = [], onUpdateStatus, onDeleteTask, onStartFocus }) => {
+export const TaskKanbanBoard = ({ tasks = [], onUpdateStatus, onDeleteTask, onStartFocus, onEditTask }) => {
   const { theme } = useTheme() || {};
   const isLight = theme === 'light';
 
@@ -88,20 +88,40 @@ export const TaskKanbanBoard = ({ tasks = [], onUpdateStatus, onDeleteTask, onSt
                       }}
                     >
                       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '8px', marginBottom: '8px' }}>
-                        <span style={{
-                          padding: '3px 10px',
-                          borderRadius: '8px',
-                          background: isLight ? 'rgba(2, 132, 199, 0.1)' : 'rgba(56, 189, 248, 0.15)',
-                          color: isLight ? '#0284c7' : '#38bdf8',
-                          fontSize: '0.72rem',
-                          fontWeight: 800
-                        }}>
-                          {t.subject}
-                        </span>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                          <span style={{
+                            padding: '3px 10px',
+                            borderRadius: '8px',
+                            background: isLight ? 'rgba(2, 132, 199, 0.1)' : 'rgba(56, 189, 248, 0.15)',
+                            color: isLight ? '#0284c7' : '#38bdf8',
+                            fontSize: '0.72rem',
+                            fontWeight: 800
+                          }}>
+                            {t.subject}
+                          </span>
+                          <span style={{
+                            padding: '2px 8px',
+                            borderRadius: '6px',
+                            background: 'rgba(16, 185, 129, 0.12)',
+                            color: '#10b981',
+                            fontSize: '0.7rem',
+                            fontWeight: 800
+                          }}>
+                            +{t.xpReward || 50} XP
+                          </span>
+                        </div>
 
                         <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                           <button
+                            onClick={() => onEditTask && onEditTask(t)}
+                            title="Edit Task"
+                            style={{ background: 'none', border: 'none', color: isLight ? '#0284c7' : '#38bdf8', cursor: 'pointer', padding: '4px' }}
+                          >
+                            <Edit3 size={14} />
+                          </button>
+                          <button
                             onClick={() => onDeleteTask(t.id)}
+                            title="Delete Task"
                             style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', padding: '4px' }}
                           >
                             <Trash2 size={14} />

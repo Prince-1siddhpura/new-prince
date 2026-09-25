@@ -91,8 +91,8 @@ export const CoursesPage = () => {
         subtitle="Discover subjects, courses, materials, practice and immersive learning tailored to your personalized learning path."
         stats={[
           { label: `${subjects.length}`, subtext: 'Curriculum Tracks', icon: BookOpen, color: '#38bdf8', iconBg: 'rgba(56, 189, 248, 0.25)' },
-          { label: 'Level 4', subtext: 'Student XP Rank', icon: Star, color: '#fbbf24', iconBg: 'rgba(251, 191, 36, 0.25)' },
-          { label: '3', subtext: 'Learning Goals', isPill: true }
+          { label: `Level ${learner?.level || 1}`, subtext: 'Student XP Rank', icon: Star, color: '#fbbf24', iconBg: 'rgba(251, 191, 36, 0.25)' },
+          { label: `${Array.isArray(learner?.goals) ? learner.goals.length : 0}`, subtext: 'Learning Goals', icon: Award, color: '#34d399', iconBg: 'rgba(52, 211, 153, 0.25)' }
         ]}
       />
 

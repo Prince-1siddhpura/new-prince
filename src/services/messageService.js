@@ -16,7 +16,7 @@ export const getExchangeMessages = (exchangeId) => {
   return [];
 };
 
-export const sendExchangeMessage = (exchangeId, text, senderId = 'current_user', senderName = 'Aarav Shah', avatar = '') => {
+export const sendExchangeMessage = (exchangeId, text, senderId = 'current_user', senderName = 'Peer Scholar', avatar = '') => {
   try {
     const raw = localStorage.getItem(MESSAGES_KEY);
     const all = raw ? JSON.parse(raw) : [];

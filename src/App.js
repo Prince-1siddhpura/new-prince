@@ -42,6 +42,9 @@ import { ChallengesPage } from './pages/Gamification/ChallengesPage';
 import { ProfilePage } from './pages/Profile/ProfilePage';
 import { SettingsPage } from './pages/Settings/SettingsPage';
 import { ParentDashboardPage } from './pages/Dashboard/ParentDashboardPage';
+import { ParentChildPerformancePage } from './pages/Parent/ParentChildPerformancePage';
+import { ParentChildProfilePage } from './pages/Parent/ParentChildProfilePage';
+import { InstructorDashboardPage } from './pages/Instructor/InstructorDashboardPage';
 import { MyTasksPage } from './pages/Tasks/MyTasksPage';
 import { GameCenterPage } from './pages/Games/GameCenterPage';
 import { AdminDashboardPage } from './pages/Admin/AdminDashboardPage';
@@ -74,18 +77,18 @@ export default function App() {
 
                       {/* Authenticated Protected Shell */}
                       <Route path="/onboarding" element={<ProtectedRoute><OnboardingPage /></ProtectedRoute>} />
-                      <Route path="/dashboard" element={<ProtectedRoute><StudentDashboardPage /></ProtectedRoute>} />
-                      <Route path="/dashboard/school" element={<ProtectedRoute><StudentDashboardPage track="school" /></ProtectedRoute>} />
-                      <Route path="/dashboard/college" element={<ProtectedRoute><StudentDashboardPage track="college" /></ProtectedRoute>} />
-                      <Route path="/dashboard/skills" element={<ProtectedRoute><StudentDashboardPage track="skills" /></ProtectedRoute>} />
-                      <Route path="/dashboard/exam" element={<ProtectedRoute><StudentDashboardPage track="exam" /></ProtectedRoute>} />
+                      <Route path="/dashboard" element={<ProtectedRoute allowedRoles={['STUDENT']}><StudentDashboardPage /></ProtectedRoute>} />
+                      <Route path="/dashboard/school" element={<ProtectedRoute allowedRoles={['STUDENT']}><StudentDashboardPage track="school" /></ProtectedRoute>} />
+                      <Route path="/dashboard/college" element={<ProtectedRoute allowedRoles={['STUDENT']}><StudentDashboardPage track="college" /></ProtectedRoute>} />
+                      <Route path="/dashboard/skills" element={<ProtectedRoute allowedRoles={['STUDENT']}><StudentDashboardPage track="skills" /></ProtectedRoute>} />
+                      <Route path="/dashboard/exam" element={<ProtectedRoute allowedRoles={['STUDENT']}><StudentDashboardPage track="exam" /></ProtectedRoute>} />
                       <Route path="/notes" element={<ProtectedRoute><NotesPage /></ProtectedRoute>} />
                       <Route path="/notes/:noteId" element={<ProtectedRoute><NotesPage /></ProtectedRoute>} />
                       <Route path="/dashboard/notes" element={<ProtectedRoute><NotesPage /></ProtectedRoute>} />
-                      <Route path="/my-subjects" element={<ProtectedRoute><MySubjectsPage /></ProtectedRoute>} />
+                      <Route path="/my-subjects" element={<ProtectedRoute allowedRoles={['STUDENT']}><MySubjectsPage /></ProtectedRoute>} />
                       <Route path="/subjects/:subjectId" element={<ProtectedRoute><SubjectDetailsPage /></ProtectedRoute>} />
                       <Route path="/ai-assistant" element={<ProtectedRoute><AIAssistantPage /></ProtectedRoute>} />
-                      <Route path="/learning-path" element={<ProtectedRoute><LearningPathPage /></ProtectedRoute>} />
+                      <Route path="/learning-path" element={<ProtectedRoute allowedRoles={['STUDENT']}><LearningPathPage /></ProtectedRoute>} />
                       <Route path="/study-planner" element={<ProtectedRoute><StudyPlannerPage /></ProtectedRoute>} />
                       <Route path="/tasks" element={<ProtectedRoute><MyTasksPage /></ProtectedRoute>} />
                       <Route path="/my-tasks" element={<ProtectedRoute><MyTasksPage /></ProtectedRoute>} />
@@ -108,18 +111,29 @@ export default function App() {
                       <Route path="/courses" element={<ProtectedRoute><CoursesPage /></ProtectedRoute>} />
                       <Route path="/courses/:id" element={<ProtectedRoute><CourseDetailsPage /></ProtectedRoute>} />
                       <Route path="/courses/:id/lesson" element={<ProtectedRoute><LessonPage /></ProtectedRoute>} />
-                      <Route path="/analytics" element={<ProtectedRoute><ProgressAnalyticsPage /></ProtectedRoute>} />
+                      <Route path="/analytics" element={<ProtectedRoute allowedRoles={['STUDENT']}><ProgressAnalyticsPage /></ProtectedRoute>} />
                       <Route path="/community" element={<ProtectedRoute><CommunityPage /></ProtectedRoute>} />
                       <Route path="/community/:channelId" element={<ProtectedRoute><SkillExchangePage initialTab="messages" /></ProtectedRoute>} />
                       <Route path="/achievements" element={<ProtectedRoute><AchievementsPage /></ProtectedRoute>} />
                       <Route path="/challenges" element={<ProtectedRoute><ChallengesPage /></ProtectedRoute>} />
                       <Route path="/profile" element={<ProtectedRoute><ProfilePage /></ProtectedRoute>} />
                       <Route path="/settings" element={<ProtectedRoute><SettingsPage /></ProtectedRoute>} />
-                      <Route path="/parent-dashboard" element={<ProtectedRoute><ParentDashboardPage /></ProtectedRoute>} />
-                      <Route path="/parent/dashboard" element={<ProtectedRoute><ParentDashboardPage /></ProtectedRoute>} />
-                      <Route path="/parent/performance" element={<ProtectedRoute><ParentDashboardPage /></ProtectedRoute>} />
-                      <Route path="/parent/settings" element={<ProtectedRoute><ParentDashboardPage /></ProtectedRoute>} />
-                      <Route path="/admin" element={<ProtectedRoute><AdminDashboardPage /></ProtectedRoute>} />
+
+                      {/* Parent Protected Routes */}
+                      <Route path="/parent-dashboard" element={<ProtectedRoute allowedRoles={['PARENT']}><ParentDashboardPage /></ProtectedRoute>} />
+                      <Route path="/parent/dashboard" element={<ProtectedRoute allowedRoles={['PARENT']}><ParentDashboardPage /></ProtectedRoute>} />
+                      <Route path="/parent/performance" element={<ProtectedRoute allowedRoles={['PARENT']}><ParentChildPerformancePage /></ProtectedRoute>} />
+                      <Route path="/parent/child-profile" element={<ProtectedRoute allowedRoles={['PARENT']}><ParentChildProfilePage /></ProtectedRoute>} />
+                      <Route path="/parent/settings" element={<ProtectedRoute allowedRoles={['PARENT']}><SettingsPage /></ProtectedRoute>} />
+
+                      {/* Instructor Protected Routes */}
+                      <Route path="/instructor/dashboard" element={<ProtectedRoute allowedRoles={['INSTRUCTOR', 'ADMIN']}><InstructorDashboardPage /></ProtectedRoute>} />
+                      <Route path="/instructor/courses" element={<ProtectedRoute allowedRoles={['INSTRUCTOR', 'ADMIN']}><InstructorDashboardPage /></ProtectedRoute>} />
+                      <Route path="/instructor/students" element={<ProtectedRoute allowedRoles={['INSTRUCTOR', 'ADMIN']}><InstructorDashboardPage /></ProtectedRoute>} />
+                      <Route path="/instructor/assessments" element={<ProtectedRoute allowedRoles={['INSTRUCTOR', 'ADMIN']}><InstructorDashboardPage /></ProtectedRoute>} />
+
+                      {/* Admin Protected Routes */}
+                      <Route path="/admin" element={<ProtectedRoute allowedRoles={['ADMIN']}><AdminDashboardPage /></ProtectedRoute>} />
                     </Route>
 
                     {/* Auth Shell */}

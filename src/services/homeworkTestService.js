@@ -4,19 +4,23 @@
  * and calculates objective EduNova Learning Health.
  */
 
+import { homeworkApi } from '../lib/apiClient';
+
 const STORAGE_KEY_HW = 'edunova_homework';
 const STORAGE_KEY_TESTS = 'edunova_upcoming_tests';
 
-const SEED_HOMEWORK = [
-  { id: 'hw_1', subject: 'Mathematics', title: 'Exercise 4.2 Quadratic Formula & Discriminant', dueDate: '2026-09-21', priority: 'High', status: 'In Progress' },
-  { id: 'hw_2', subject: 'Science', title: 'Draw Ray Diagrams for Concave & Convex Mirrors', dueDate: '2026-09-22', priority: 'Medium', status: 'Not Started' },
-  { id: 'hw_3', subject: 'English', title: 'Write 250-word Essay on First Flight Chapter 3', dueDate: '2026-09-24', priority: 'Low', status: 'Completed' }
-];
-
-const SEED_TESTS = [
-  { id: 'test_1', subject: 'Mathematics', topic: 'Quadratic Equations & Arithmetic Progression', date: '2026-09-25', prepProgress: 75, daysRemaining: 6 },
-  { id: 'test_2', subject: 'Science', topic: 'Light Reflection, Refraction & Electricity', date: '2026-09-28', prepProgress: 62, daysRemaining: 9 }
-];
+export const fetchHomework = async () => {
+  try {
+    const res = await homeworkApi.getHomework();
+    if (res && res.data && Array.isArray(res.data) && res.data.length > 0) {
+      localStorage.setItem(STORAGE_KEY_HW, JSON.stringify(res.data));
+      return res.data;
+    }
+  } catch (err) {
+    console.warn('Failed to fetch homework from server:', err.message);
+  }
+  return getHomework();
+};
 
 export const getHomework = () => {
   try {
@@ -25,8 +29,9 @@ export const getHomework = () => {
   } catch (e) {
     console.warn('Could not load homework', e);
   }
-  localStorage.setItem(STORAGE_KEY_HW, JSON.stringify(SEED_HOMEWORK));
-  return SEED_HOMEWORK;
+  // Trigger background sync
+  fetchHomework().catch(() => {});
+  return [];
 };
 
 export const saveHomework = (list) => {
@@ -35,16 +40,43 @@ export const saveHomework = (list) => {
   return list;
 };
 
-export const toggleHomeworkStatus = (id) => {
+export const createHomework = async (item) => {
+  try {
+    const res = await homeworkApi.createHomework(item);
+    if (res && res.data) {
+      const current = getHomework();
+      const updated = [res.data, ...current.filter(h => h.id !== res.data.id)];
+      saveHomework(updated);
+      return res.data;
+    }
+  } catch (err) {
+    console.warn('Failed to create homework on backend:', err.message);
+  }
+  const fallback = { id: `hw_${Date.now()}`, ...item };
   const current = getHomework();
+  saveHomework([fallback, ...current]);
+  return fallback;
+};
+
+export const toggleHomeworkStatus = async (id) => {
+  const current = getHomework();
+  let nextStatus = 'In Progress';
   const updated = current.map(item => {
     if (item.id === id) {
-      const nextStatus = item.status === 'Completed' ? 'In Progress' : item.status === 'In Progress' ? 'Completed' : 'In Progress';
+      nextStatus = item.status === 'Completed' ? 'In Progress' : item.status === 'In Progress' ? 'Completed' : 'In Progress';
       return { ...item, status: nextStatus };
     }
     return item;
   });
-  return saveHomework(updated);
+  saveHomework(updated);
+
+  try {
+    await homeworkApi.updateHomework(id, { status: nextStatus });
+  } catch (err) {
+    console.warn('Failed to update homework status on server:', err.message);
+  }
+
+  return updated;
 };
 
 export const getUpcomingTests = () => {
@@ -54,9 +86,9 @@ export const getUpcomingTests = () => {
   } catch (e) {
     console.warn('Could not load tests', e);
   }
-  localStorage.setItem(STORAGE_KEY_TESTS, JSON.stringify(SEED_TESTS));
-  return SEED_TESTS;
+  return [];
 };
+
 
 /**
  * Spaced Repetition Revision Radar

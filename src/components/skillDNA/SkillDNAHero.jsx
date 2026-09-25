@@ -14,8 +14,8 @@ export const SkillDNAHero = ({ skillDNA, onTakeAssessment, onGenerateRoadmap }) 
         subtitle="Your evolving learning intelligence profile — built from what you actually learn, practice, create, and achieve."
         stats={[
           { label: `${index}%`, subtext: 'Progress Index', icon: Activity, color: '#38bdf8', iconBg: 'rgba(56, 189, 248, 0.25)' },
-          { label: 'Level 4', subtext: 'XP Rank', icon: Sparkles, color: '#c084fc', iconBg: 'rgba(192, 132, 252, 0.25)' },
-          { label: '3', subtext: 'Learning Goals', isPill: true }
+          { label: skillDNA?.level ? `Level ${skillDNA.level}` : 'Active DNA', subtext: 'XP Rank', icon: Sparkles, color: '#c084fc', iconBg: 'rgba(192, 132, 252, 0.25)' },
+          { label: `${skillDNA?.verifiedSkills?.length || skillDNA?.skills?.length || 0}`, subtext: 'Verified Skills', icon: ShieldCheck, color: '#10b981', iconBg: 'rgba(16, 185, 129, 0.25)' }
         ]}
       />
 

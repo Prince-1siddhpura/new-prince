@@ -4,12 +4,12 @@ import { Plus, UserCheck, Calendar, Sparkles, MessageSquare, Users, Repeat } fro
 import { getUnreadMessageCount } from '../../services/chatService';
 
 export const SkillExchangeHeader = ({ onCreateExchange, onAddSkill, onFindMentor, onMySchedule, onOpenMessages }) => {
-  const [unreadCount, setUnreadCount] = useState(3);
+  const [unreadCount, setUnreadCount] = useState(0);
 
   useEffect(() => {
     try {
       const count = getUnreadMessageCount();
-      setUnreadCount(count || 3);
+      setUnreadCount(count || 0);
     } catch (e) {}
   }, []);
 
@@ -21,9 +21,9 @@ export const SkillExchangeHeader = ({ onCreateExchange, onAddSkill, onFindMentor
         title="Peer Skill Exchange"
         subtitle="Share what you know. Learn what you need. Build skills together through 1-on-1 peer sessions & mentorship."
         stats={[
-          { label: '24 Active', subtext: 'Peer Learners Now', icon: Users, color: '#38bdf8', iconBg: 'rgba(56, 189, 248, 0.25)' },
-          { label: 'Level 4', subtext: 'XP Rank', icon: Sparkles, color: '#c084fc', iconBg: 'rgba(192, 132, 252, 0.25)' },
-          { label: '3', subtext: 'Learning Goals', isPill: true }
+          { label: 'Peer Network', subtext: 'Active Community', icon: Users, color: '#38bdf8', iconBg: 'rgba(56, 189, 248, 0.25)' },
+          { label: '1-on-1 Swap', subtext: 'Skill Mentorship', icon: Repeat, color: '#c084fc', iconBg: 'rgba(192, 132, 252, 0.25)' },
+          { label: `${unreadCount} Messages`, subtext: 'Inbox Status', icon: MessageSquare, color: '#10b981', iconBg: 'rgba(16, 185, 129, 0.25)' }
         ]}
       />
 

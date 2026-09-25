@@ -163,7 +163,7 @@ ParentDashboardPage = () => {
           stats={[
             { label: `${healthScore}/100`, subtext: 'Health Score', icon: ShieldCheck, color: '#10b981' },
             { label: today.studyTime, subtext: 'Study Today', icon: Clock, color: '#22d3ee' },
-            { label: '3', subtext: 'Learning Goals', isPill: true }
+            { label: `${subjects?.length || 0}`, subtext: 'Monitored Subjects', icon: BookOpen, color: '#a855f7' }
           ]}
         />
 

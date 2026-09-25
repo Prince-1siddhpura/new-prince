@@ -103,7 +103,7 @@ export const SkillExchangePage = ({ initialTab = 'discover' }) => {
     setIsMeetingRoomOpen(true);
   };
 
-  const unreadCount = getUnreadMessageCount() || 3;
+  const unreadCount = getUnreadMessageCount() || 0;
 
   return (
     <div className="skill-exchange-page">

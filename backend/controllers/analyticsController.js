@@ -8,18 +8,67 @@
  * - PATCH /api/analytics/study-sessions/:id/complete   (Complete study session)
  */
 
+const prisma = require('../config/db');
 const analyticsService = require('../services/analyticsService');
 
 /**
  * GET /api/analytics/overview
  * Real PostgreSQL performance analytics (study hours, mastery, revision radar, consistency)
+ * If requester is PARENT, automatically resolves their linked student's performance.
  */
 const getOverview = async (req, res, next) => {
   try {
-    const overview = await analyticsService.getLearnerOverview(req.user.id);
+    let targetUserId = req.user.id;
+
+    if (req.user.role === 'PARENT') {
+      const parent = await prisma.user.findUnique({
+        where: { id: req.user.id },
+        select: { studentUsername: true },
+      });
+
+      if (!parent?.studentUsername) {
+        return res.json({
+          success: true,
+          message: 'No student currently linked to parent account',
+          data: {
+            isParentViewingChild: true,
+            hasLinkedChild: false,
+            kpis: { plannedHours: 0, completedHours: 0, overallAccuracy: 0, syllabusCoverage: 0 },
+            subjects: [],
+            studySessions: [],
+            quizAttempts: [],
+            learner: { name: 'No linked child', xp: 0, level: 1, streakDays: 0 },
+          },
+        });
+      }
+
+      const student = await prisma.user.findFirst({
+        where: {
+          role: 'STUDENT',
+          OR: [
+            { email: { equals: parent.studentUsername, mode: 'insensitive' } },
+            { studentUsername: { equals: parent.studentUsername, mode: 'insensitive' } },
+            { name: { equals: parent.studentUsername, mode: 'insensitive' } },
+            { id: parent.studentUsername },
+          ],
+        },
+        select: { id: true, name: true },
+      });
+
+      if (!student) {
+        return res.status(404).json({
+          success: false,
+          message: `Linked student with identifier "${parent.studentUsername}" was not found.`,
+        });
+      }
+
+      targetUserId = student.id;
+    }
+
+    const overview = await analyticsService.getLearnerOverview(targetUserId);
     return res.json({
       success: true,
-      message: 'Learner performance analytics retrieved successfully',
+      message: req.user.role === 'PARENT' ? 'Child performance analytics retrieved successfully' : 'Learner performance analytics retrieved successfully',
       data: overview,
     });
   } catch (error) {
@@ -29,14 +78,82 @@ const getOverview = async (req, res, next) => {
 
 /**
  * GET /api/analytics/student/:userId?
- * Student analytics with role guard
+ * Student analytics with strict parent-child role guard
  */
 const getStudentAnalytics = async (req, res, next) => {
   try {
     const targetUserId = req.params.userId || req.user.id;
 
+    // 1. STUDENT can only access their own analytics
     if (req.user.role === 'STUDENT' && targetUserId !== req.user.id) {
-      return res.status(403).json({ success: false, message: 'Unauthorized to view other students analytics' });
+      return res.status(403).json({
+        success: false,
+        message: 'Access denied: You are not authorized to view other students analytics.',
+      });
+    }
+
+    // 2. PARENT can only access their linked child's analytics
+    if (req.user.role === 'PARENT') {
+      const parent = await prisma.user.findUnique({
+        where: { id: req.user.id },
+        select: { studentUsername: true },
+      });
+
+      if (!parent?.studentUsername) {
+        return res.status(403).json({
+          success: false,
+          message: 'Access denied: No linked student found for your parent account.',
+        });
+      }
+
+      const targetStudent = await prisma.user.findUnique({
+        where: { id: targetUserId },
+        select: { id: true, studentUsername: true, email: true, name: true, role: true },
+      });
+
+      if (!targetStudent || targetStudent.role !== 'STUDENT') {
+        return res.status(404).json({
+          success: false,
+          message: 'Target student not found.',
+        });
+      }
+
+      const parentIdentifiers = parent.studentUsername
+        .split(',')
+        .map((s) => s.trim().toLowerCase())
+        .filter(Boolean);
+
+      const isLinked = parentIdentifiers.some(
+        (id) =>
+          id === targetStudent.email?.toLowerCase() ||
+          id === targetStudent.studentUsername?.toLowerCase() ||
+          id === targetStudent.name?.toLowerCase() ||
+          id === targetStudent.id
+      );
+
+      if (!isLinked) {
+        return res.status(403).json({
+          success: false,
+          message: 'Access denied: You can only view analytics for your verified linked student.',
+        });
+      }
+    }
+
+    // 3. INSTRUCTOR can only access students enrolled in their courses
+    if (req.user.role === 'INSTRUCTOR') {
+      const isEnrolledInCourse = await prisma.userCourseProgress.findFirst({
+        where: {
+          userId: targetUserId,
+          course: { instructorId: req.user.id },
+        },
+      });
+
+      if (!isEnrolledInCourse) {
+        return res.status(403).json({
+          success: false,
+          message: 'Access denied: You can only view analytics for students enrolled in your courses.',
+        });
+      }
     }
 
     const data = await analyticsService.getLearnerOverview(targetUserId);

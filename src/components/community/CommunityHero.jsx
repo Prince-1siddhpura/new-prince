@@ -11,9 +11,9 @@ export const CommunityHero = ({ onOpenAskModal, onOpenGroupModal, onOpenMentorTa
         title="EduNova Community Hub 💬"
         subtitle="Ask questions, share architectural knowledge, and solve challenges together with global mentors and study squads."
         stats={[
-          { label: '12', subtext: 'Topics Following' },
-          { label: '4', subtext: 'Active Study Groups' },
-          { label: '3', subtext: 'Learning Goals', isPill: true }
+          { label: 'Discussions', subtext: 'Questions & Answers', icon: MessageSquare, color: '#38bdf8', iconBg: 'rgba(56, 189, 248, 0.25)' },
+          { label: 'Study Squads', subtext: 'Peer Study Groups', icon: Users, color: '#c084fc', iconBg: 'rgba(192, 132, 252, 0.25)' },
+          { label: 'Mentorship', subtext: 'Verified Guidance', icon: Award, color: '#10b981', iconBg: 'rgba(16, 185, 129, 0.25)' }
         ]}
       />
       <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', justifyContent: 'flex-end', marginTop: '-8px' }}>

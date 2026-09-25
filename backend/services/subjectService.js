@@ -3,7 +3,22 @@ const prisma = require('../config/db');
 /**
  * Get all subjects with optional curriculum filters
  */
-const getSubjects = async ({ educationType, board, className, class: classAlt, degree, branch, semester, exam, category, search }) => {
+const getSubjects = async ({
+  educationType,
+  board,
+  className,
+  class: classAlt,
+  degree,
+  branch,
+  semester,
+  exam,
+  category,
+  search,
+  page,
+  limit,
+  sortBy = 'name',
+  sortOrder = 'asc'
+}) => {
   const targetClass = className || classAlt;
   const where = {};
 
@@ -14,13 +29,45 @@ const getSubjects = async ({ educationType, board, className, class: classAlt, d
   if (branch) where.branch = branch;
   if (semester) where.semester = String(semester);
   if (exam) where.exam = exam;
-  if (category) where.category = { contains: category };
+  if (category) where.category = { contains: category, mode: 'insensitive' };
   
   if (search) {
     where.OR = [
-      { name: { contains: search } },
-      { category: { contains: search } },
+      { name: { contains: search, mode: 'insensitive' } },
+      { category: { contains: search, mode: 'insensitive' } },
     ];
+  }
+
+  const allowedSortFields = ['name', 'createdAt', 'code', 'category', 'educationType'];
+  const validSortField = allowedSortFields.includes(sortBy) ? sortBy : 'name';
+  const validSortOrder = sortOrder?.toLowerCase() === 'desc' ? 'desc' : 'asc';
+  const orderBy = { [validSortField]: validSortOrder };
+
+  const parsedPage = page ? Math.max(1, parseInt(page, 10) || 1) : null;
+  const parsedLimit = limit ? Math.min(100, Math.max(1, parseInt(limit, 10) || 20)) : null;
+
+  if (parsedPage && parsedLimit) {
+    const [subjects, total] = await Promise.all([
+      prisma.subject.findMany({
+        where,
+        include: {
+          topics: { orderBy: { order: 'asc' } },
+          _count: { select: { progress: true } },
+        },
+        orderBy,
+        skip: (parsedPage - 1) * parsedLimit,
+        take: parsedLimit,
+      }),
+      prisma.subject.count({ where }),
+    ]);
+
+    return {
+      subjects,
+      total,
+      page: parsedPage,
+      limit: parsedLimit,
+      totalPages: Math.ceil(total / parsedLimit),
+    };
   }
 
   let subjects = await prisma.subject.findMany({
@@ -29,7 +76,7 @@ const getSubjects = async ({ educationType, board, className, class: classAlt, d
       topics: { orderBy: { order: 'asc' } },
       _count: { select: { progress: true } },
     },
-    orderBy: { name: 'asc' },
+    orderBy,
   });
 
   return subjects;

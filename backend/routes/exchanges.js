@@ -23,4 +23,20 @@ router.post('/request', skillExchangeController.createExchangeRequest);
 // PATCH /api/exchanges/:id/status - Accept/reject proposal (auto-provisions room if accepted)
 router.patch('/:id/status', skillExchangeController.updateExchangeStatus);
 
+// Meetings
+router.get('/meetings', (req, res, next) => skillExchangeController.getMeetings(req, res, next));
+router.post('/meetings', (req, res, next) => skillExchangeController.scheduleMeeting(req, res, next));
+router.patch('/meetings/:id/status', (req, res, next) => skillExchangeController.updateMeetingStatus(req, res, next));
+router.get('/:id/meetings', (req, res, next) => skillExchangeController.getMeetings(req, res, next));
+router.post('/:id/meetings', (req, res, next) => skillExchangeController.scheduleMeeting(req, res, next));
+
+// Goals & Milestones
+router.get('/goals', (req, res, next) => skillExchangeController.getGoals(req, res, next));
+router.post('/goals', (req, res, next) => skillExchangeController.createGoal(req, res, next));
+router.patch('/goals/:id/progress', (req, res, next) => skillExchangeController.updateGoalProgress(req, res, next));
+router.get('/:id/goals', (req, res, next) => skillExchangeController.getGoals(req, res, next));
+router.post('/:id/goals', (req, res, next) => skillExchangeController.createGoal(req, res, next));
+router.patch('/:id/goals/:goalId/toggle', (req, res, next) => skillExchangeController.toggleGoalMilestone(req, res, next));
+
 module.exports = router;
+

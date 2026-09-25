@@ -94,7 +94,7 @@ export const XRStudioPage = () => {
         stats={[
           { label: 'Spatial 3D', subtext: 'Interactive Models', icon: Glasses, color: '#38bdf8', iconBg: 'rgba(56, 189, 248, 0.25)' },
           { label: 'WebXR Ready', subtext: 'AR / VR Mode', icon: Sparkles, color: '#c084fc', iconBg: 'rgba(192, 132, 252, 0.25)' },
-          { label: '3', subtext: 'Learning Goals', isPill: true }
+          { label: `${availableModels.length}`, subtext: 'Spatial Models', icon: Layers, color: '#34d399', iconBg: 'rgba(52, 211, 153, 0.25)' }
         ]}
       />
 

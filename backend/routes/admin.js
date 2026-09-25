@@ -71,6 +71,7 @@ router.use(requireRole('ADMIN'));
 // ── Routes ───────────────────────────────────────────────────────────────────
 
 router.get('/metrics', getMetrics);
+router.get('/stats', getMetrics);
 router.get('/users', validate(queryUsersSchema), getUsers);
 router.patch('/users/:id/role', validate(updateRoleSchema), updateUserRole);
 router.get('/courses', getCourses);

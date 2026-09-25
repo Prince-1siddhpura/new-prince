@@ -1,7 +1,22 @@
 // EduNova Peer Skill Exchange Meeting Service
 // Handles availability overlap matching, scheduling, timezone conversion, and meeting session lifecycle.
 
+import { exchangeApi } from '../lib/apiClient';
+
 const MEETINGS_KEY = 'edunova_skill_exchange_meetings_v2';
+
+export const fetchMeetings = async (exchangeId) => {
+  try {
+    const res = await exchangeApi.getMeetings(exchangeId);
+    if (res && res.data && Array.isArray(res.data) && res.data.length > 0) {
+      saveMeetings(res.data);
+      return res.data;
+    }
+  } catch (err) {
+    console.warn('Failed to fetch meetings from server:', err.message);
+  }
+  return getStoredMeetings();
+};
 
 /**
  * Initialize meetings in storage
@@ -13,7 +28,6 @@ export const getStoredMeetings = () => {
   } catch (e) {
     console.error('Failed to load meetings', e);
   }
-  localStorage.setItem(MEETINGS_KEY, JSON.stringify([]));
   return [];
 };
 
@@ -27,6 +41,7 @@ export const saveMeetings = (meetings) => {
     console.error('Failed to save meetings', e);
   }
 };
+
 
 /**
  * Calculate mutually available time slots between two users for a given day
@@ -99,6 +114,32 @@ export const scheduleMeeting = (meetingData) => {
 
   const updated = [newMeeting, ...current];
   saveMeetings(updated);
+
+  // Persist to PostgreSQL backend
+  exchangeApi.scheduleMeeting({
+    exchangeId: newMeeting.exchangeId,
+    participantId: newMeeting.participantId,
+    participantName: newMeeting.participantName,
+    participantAvatar: newMeeting.participantAvatar,
+    title: newMeeting.title,
+    type: newMeeting.type,
+    date: newMeeting.date,
+    startTime: newMeeting.startTime,
+    endTime: newMeeting.endTime,
+    duration: newMeeting.duration,
+    timezoneHost: newMeeting.timezoneHost,
+    timezonePeer: newMeeting.timezonePeer,
+    agenda: newMeeting.agenda,
+    meetingLink: newMeeting.meetingLink
+  }).then((res) => {
+    if (res && res.data) {
+      // Refresh local cache with genuine database record
+      fetchMeetings();
+    }
+  }).catch((err) => {
+    console.warn('Failed to schedule meeting on backend:', err.message);
+  });
+
   return newMeeting;
 };
 
@@ -125,5 +166,11 @@ export const updateMeetingStatus = (meetingId, newStatus) => {
   const current = getStoredMeetings();
   const updated = current.map(m => m.id === meetingId ? { ...m, status: newStatus } : m);
   saveMeetings(updated);
+
+  exchangeApi.updateMeetingStatus(meetingId, newStatus).catch((err) => {
+    console.warn('Failed to update meeting status on backend:', err.message);
+  });
+
   return updated;
 };
+

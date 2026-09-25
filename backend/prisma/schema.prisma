@@ -111,6 +111,18 @@ model User {
   studySessions           StudySession[]
   aiConversations         AiConversation[]
   notes                   Note[]
+  tasks                   Task[]
+  gameResults             GameResult[]
+  labAttempts             LabAttempt[]
+  xrProgress              XrProgress[]
+  learningActivities      LearningActivity[]
+  notifications           Notification[]
+  learningMaterials       LearningMaterial[]
+  homeworkItems           HomeworkItem[]
+  parentCompanionConfig   ParentCompanionConfig?
+  communityPosts          CommunityPost[]
+  postComments            PostComment[]
+  postLikes               PostLike[]
 
   @@index([role])
   @@index([learnerType])
@@ -388,6 +400,8 @@ model AdminAuditLog {
 model Conversation {
   id            String           @id @default(cuid())
   type          ConversationType @default(DIRECT)
+  title         String?
+  description   String?
   createdAt     DateTime         @default(now())
   updatedAt     DateTime         @updatedAt
 
@@ -424,6 +438,10 @@ model ChatMessage {
   content        String
   messageType    MessageType  @default(TEXT)
   fileUrl        String?
+  attachment     Json?
+  replyToId      String?
+  reactions      Json?
+  isPinned       Boolean      @default(false)
   createdAt      DateTime     @default(now())
 
   // ── Relations ─────────────────────────────────────────────────────────────
@@ -454,6 +472,8 @@ model SkillExchange {
   sender         User          @relation("SentSkillExchanges", fields: [senderId], references: [id], onDelete: Cascade)
   receiver       User          @relation("ReceivedSkillExchanges", fields: [receiverId], references: [id], onDelete: Cascade)
   conversation   Conversation? @relation(fields: [conversationId], references: [id], onDelete: SetNull)
+  meetings       ExchangeMeeting[]
+  goals          ExchangeGoal[]
 
   @@index([senderId])
   @@index([receiverId])
@@ -620,4 +640,323 @@ model Note {
   @@index([subjectId])
   @@index([topicId])
   @@map("notes")
+}
+
+// ============================================================================
+// 16. TASKS & STUDY TO-DOS (Replacing edunova_tasks_v1)
+// ============================================================================
+
+model Task {
+  id                String    @id @default(cuid())
+  userId            String
+  title             String
+  description       String?
+  subject           String?
+  topic             String?
+  type              String    @default("Study") // "Study", "Assignment", "Revision", "Project"
+  priority          String    @default("MEDIUM") // "LOW", "MEDIUM", "HIGH", "URGENT"
+  status            String    @default("NOT_STARTED") // "NOT_STARTED", "IN_PROGRESS", "COMPLETED"
+  dueDate           DateTime?
+  startDate         DateTime?
+  estimatedDuration Int       @default(30)
+  isImportant       Boolean   @default(false)
+  tags              String[]  @default([])
+  subtasks          Json?     // Array of { id, title, completed }
+  notes             String?
+  xpReward          Int       @default(50)
+  completedAt       DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  user              User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, status])
+  @@index([userId, dueDate])
+  @@map("tasks")
+}
+
+// ============================================================================
+// 17. GAME SCORES & LEARNING GAMES (Replacing edunova_game_results_v1)
+// ============================================================================
+
+model GameResult {
+  id              String   @id @default(cuid())
+  userId          String
+  gameId          String
+  gameTitle       String
+  subject         String?
+  score           Int      @default(0)
+  accuracy        Float    @default(0)
+  xpEarned        Int      @default(0)
+  durationSeconds Int      @default(0)
+  mistakes        Json?
+  createdAt       DateTime @default(now())
+
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, gameId])
+  @@index([gameId, score])
+  @@map("game_results")
+}
+
+// ============================================================================
+// 18. LAB EXPERIMENTS & SIMULATION ATTEMPTS (Replacing edunova_lab_progress_v1)
+// ============================================================================
+
+model LabAttempt {
+  id            String   @id @default(cuid())
+  userId        String
+  labId         String
+  labTitle      String
+  subject       String
+  parameters    Json?
+  results       Json?
+  score         Float    @default(0)
+  timeSpentMins Int      @default(0)
+  notes         String?
+  createdAt     DateTime @default(now())
+
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, labId])
+  @@map("lab_attempts")
+}
+
+// ============================================================================
+// 19. XR PROGRESS & 3D TELEMETRY (Replacing edunova_xr_progress_v1)
+// ============================================================================
+
+model XrProgress {
+  id                  String   @id @default(cuid())
+  userId              String
+  modelId             String
+  timeSpentSeconds    Int      @default(0)
+  hotspotsViewed      String[] @default([])
+  challengesCompleted Int      @default(0)
+  quizScore           Int?
+  completed           Boolean  @default(false)
+  lastVisited         DateTime @default(now())
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  user                User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, modelId])
+  @@index([userId])
+  @@map("xr_progress")
+}
+
+// ============================================================================
+// 20. LEARNING ACTIVITIES & EVENT LOGS (Replacing edunova_learning_activities)
+// ============================================================================
+
+model LearningActivity {
+  id              String   @id @default(cuid())
+  userId          String
+  type            String   // 'QUIZ', 'LESSON', 'PRACTICE', 'SIMULATION', 'REVISION'
+  subject         String
+  topic           String?
+  durationMinutes Int      @default(15)
+  accuracy        Float    @default(0)
+  xpEarned        Int      @default(0)
+  metadata        Json?
+  createdAt       DateTime @default(now())
+
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@map("learning_activities")
+}
+
+// ============================================================================
+// 21. NOTIFICATIONS (Replacing edunova_notifications)
+// ============================================================================
+
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String
+  title     String
+  message   String
+  type      String   @default("INFO") // "INFO", "SUCCESS", "WARNING", "ACHIEVEMENT", "EXCHANGE"
+  isRead    Boolean  @default(false)
+  linkUrl   String?
+  createdAt DateTime @default(now())
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, isRead])
+  @@map("notifications")
+}
+
+// ============================================================================
+// 22. PEER EXCHANGE MEETINGS & GOALS (Replacing meetingService & exchangeGoalService)
+// ============================================================================
+
+model ExchangeMeeting {
+  id            String   @id @default(cuid())
+  exchangeId    String
+  hostId        String
+  guestId       String
+  topic         String
+  scheduledDate String
+  timeSlot      String
+  status        String   @default("SCHEDULED") // "SCHEDULED", "COMPLETED", "CANCELLED"
+  notes         String?
+  meetingUrl    String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  exchange      SkillExchange @relation(fields: [exchangeId], references: [id], onDelete: Cascade)
+
+  @@index([exchangeId])
+  @@index([hostId])
+  @@index([guestId])
+  @@map("exchange_meetings")
+}
+
+model ExchangeGoal {
+  id         String        @id @default(cuid())
+  exchangeId String
+  title      String
+  category   String?
+  progress   Int           @default(0)
+  milestones Json?         // Array of { id, text, completed }
+  createdAt  DateTime      @default(now())
+  updatedAt  DateTime      @updatedAt
+
+  exchange   SkillExchange @relation(fields: [exchangeId], references: [id], onDelete: Cascade)
+
+  @@index([exchangeId])
+  @@map("exchange_goals")
+}
+
+// ============================================================================
+// 23. LEARNING MATERIALS (Replacing materialService)
+// ============================================================================
+
+model LearningMaterial {
+  id           String   @id @default(cuid())
+  title        String
+  description  String?
+  subjectId    String?
+  topicId      String?
+  type         String   @default("Document") // "Document", "Video", "Cheatsheet", "Diagram", "Exercise"
+  fileUrl      String?
+  uploadedById String
+  tags         String[] @default([])
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  uploader     User     @relation(fields: [uploadedById], references: [id], onDelete: Cascade)
+
+  @@index([subjectId])
+  @@index([uploadedById])
+  @@map("learning_materials")
+}
+
+// ============================================================================
+// 24. HOMEWORK & TESTS (Replacing homeworkTestService)
+// ============================================================================
+
+model HomeworkItem {
+  id        String    @id @default(cuid())
+  userId    String
+  subject   String
+  title     String
+  dueDate   DateTime?
+  priority  String    @default("Medium")
+  status    String    @default("In Progress") // "Not Started", "In Progress", "Completed"
+  notes     String?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, status])
+  @@map("homework_items")
+}
+
+// ============================================================================
+// 25. PARENT COMPANION CONFIG (Replacing parentCompanionService)
+// ============================================================================
+
+model ParentCompanionConfig {
+  id                      String   @id @default(cuid())
+  parentId                String   @unique
+  permissions             Json?
+  notificationPreferences Json?
+  privacyRules            Json?
+  createdAt               DateTime @default(now())
+  updatedAt               DateTime @updatedAt
+
+  parent                  User     @relation(fields: [parentId], references: [id], onDelete: Cascade)
+
+  @@map("parent_companion_configs")
+}
+
+// ============================================================================
+// 26. COMMUNITY POSTS, COMMENTS & LIKES (Replacing edunova_community_posts_v1)
+// ============================================================================
+
+model CommunityPost {
+  id               String        @id @default(cuid())
+  title            String
+  content          String
+  subject          String        @default("General")
+  topic            String?
+  difficulty       String        @default("Intermediate")
+  qualityStatus    String        @default("Clear")
+  tags             String[]      @default([])
+  authorId         String
+  upvotesCount     Int           @default(0)
+  views            Int           @default(0)
+  isPinned         Boolean       @default(false)
+  acceptedAnswerId String?
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+
+  // ── Relations ─────────────────────────────────────────────────────────────
+  author           User          @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  comments         PostComment[]
+  likes            PostLike[]
+
+  @@index([authorId])
+  @@index([subject])
+  @@index([createdAt])
+  @@map("community_posts")
+}
+
+model PostComment {
+  id           String        @id @default(cuid())
+  postId       String
+  authorId     String
+  content      String
+  isAccepted   Boolean       @default(false)
+  upvotesCount Int           @default(0)
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  // ── Relations ─────────────────────────────────────────────────────────────
+  post         CommunityPost @relation(fields: [postId], references: [id], onDelete: Cascade)
+  author       User          @relation(fields: [authorId], references: [id], onDelete: Cascade)
+
+  @@index([postId])
+  @@index([authorId])
+  @@map("post_comments")
+}
+
+model PostLike {
+  id        String        @id @default(cuid())
+  postId    String
+  userId    String
+  createdAt DateTime      @default(now())
+
+  // ── Relations ─────────────────────────────────────────────────────────────
+  post      CommunityPost @relation(fields: [postId], references: [id], onDelete: Cascade)
+  user      User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([postId, userId])
+  @@index([userId])
+  @@index([postId])
+  @@map("post_likes")
 }

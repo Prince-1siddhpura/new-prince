@@ -46,4 +46,37 @@ const passwordResetLimiter = rateLimit({
   },
 });
 
-module.exports = { apiLimiter, authLimiter, passwordResetLimiter };
+/**
+ * AI Endpoints Rate Limiter
+ * Protects backend LLM tokens and external APIs against abuse and cost spikes
+ */
+const aiLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: isDev ? 300 : 60,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    success: false,
+    message: 'AI request limit reached. Please wait a moment before sending more queries.',
+    code: 'AI_RATE_LIMIT_EXCEEDED',
+  },
+});
+
+/**
+ * File Upload Rate Limiter
+ * Protects server against storage flooding and memory exhaustion attacks
+ */
+const uploadLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: isDev ? 100 : 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    success: false,
+    message: 'Too many file upload requests. Please try again later.',
+    code: 'UPLOAD_RATE_LIMIT_EXCEEDED',
+  },
+});
+
+module.exports = { apiLimiter, authLimiter, passwordResetLimiter, aiLimiter, uploadLimiter };
+

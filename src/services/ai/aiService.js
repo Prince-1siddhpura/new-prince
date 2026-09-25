@@ -1,35 +1,72 @@
 import apiClient from '../../lib/apiClient';
 
 class AIService {
+  /**
+   * Socratic Sage AI Chat Query
+   * Multi-turn authorized conversation persisted in PostgreSQL
+   */
   async askSage({ prompt, conversationId = null }) {
-    const response = await apiClient.post('/ai/chat', {
-      message: prompt,
-      conversationId,
-    });
-    return {
-      text: response.data.reply,
-      conversationId: response.data.conversationId,
-      type: 'text',
-    };
-  }
+    try {
+      const response = await apiClient.post('/ai/chat', {
+        message: prompt,
+        conversationId,
+      });
 
-  async getHistory() {
-    const response = await apiClient.get('/ai/history');
-    return response.data;
+      const data = response.data?.data || response.data;
+
+      return {
+        text: data.reply,
+        conversationId: data.conversationId,
+        model: data.model,
+        type: 'text',
+      };
+    } catch (error) {
+      const status = error.response?.status || 503;
+      const code = error.response?.data?.code || 'AI_SERVICE_UNAVAILABLE';
+      const message = error.response?.data?.message || 'Sage AI service is currently unavailable. Please verify API configuration or try again shortly.';
+
+      const err = new Error(message);
+      err.status = status;
+      err.code = code;
+      throw err;
+    }
   }
 
   /**
-   * Specialized Quiz Generator Mode (Structured Quiz Data)
+   * Retrieve authenticated student's past Sage Q&A conversation turns from PostgreSQL
    */
-  async generateQuiz({ subjectName, topicName, difficulty = 'Medium', count = 5, subjectId = null }) {
-    const prompt = `Give me a ${count}-question ${difficulty} quiz on ${topicName || subjectName || 'Core Theory'}.`;
-    const response = await apiClient.post('/ai/generate-quiz', {
-      subject: subjectName,
-      topic: topicName,
-      difficulty: difficulty.toUpperCase(),
-      questionCount: count,
-    });
-    return response.data;
+  async getHistory(page = 1, limit = 20) {
+    try {
+      const response = await apiClient.get(`/ai/history?page=${page}&limit=${limit}`);
+      return response.data?.data || response.data;
+    } catch (error) {
+      console.warn('[AIService getHistory Warning]', error.message);
+      return { history: [], total: 0 };
+    }
+  }
+
+  /**
+   * Specialized Quiz Generator Mode (Structured Quiz Data from Gemini)
+   */
+  async generateQuiz({ subjectName, topicName, difficulty = 'Medium', count = 5 }) {
+    try {
+      const response = await apiClient.post('/ai/generate-quiz', {
+        subject: subjectName,
+        topic: topicName,
+        difficulty: difficulty.toUpperCase(),
+        questionCount: count,
+      });
+      return response.data?.data || response.data;
+    } catch (error) {
+      const status = error.response?.status || 503;
+      const code = error.response?.data?.code || 'AI_SERVICE_UNAVAILABLE';
+      const message = error.response?.data?.message || 'Sage Quiz Generator is temporarily unavailable.';
+
+      const err = new Error(message);
+      err.status = status;
+      err.code = code;
+      throw err;
+    }
   }
 
   /**
@@ -41,14 +78,109 @@ class AIService {
   }
 
   /**
-   * Flashcard Generator Mode
+   * Genuine Active Recall Flashcard Generator
+   * Routes through backend Gemini structured generation
    */
   async generateFlashcards({ subjectName, topicName, count = 5 }) {
-    return [
-      { front: `What is the core definition of ${topicName || subjectName || 'this concept'}?`, back: `A fundamental rule governing structural problem solving and state evaluation.` },
-      { front: `What is the time complexity of binary search?`, back: `O(log n) time complexity.` },
-      { front: `What condition is required for binary search?`, back: `The input array must be sorted.` }
-    ].slice(0, count);
+    try {
+      const response = await apiClient.post('/ai/flashcards', {
+        subject: subjectName,
+        topic: topicName,
+        count,
+      });
+      return response.data?.data || response.data;
+    } catch (error) {
+      const status = error.response?.status || 503;
+      const code = error.response?.data?.code || 'AI_SERVICE_UNAVAILABLE';
+      const message = error.response?.data?.message || 'Flashcard generator is temporarily unavailable.';
+
+      const err = new Error(message);
+      err.status = status;
+      err.code = code;
+      throw err;
+    }
+  }
+
+  /**
+   * Genuine Adaptive Study Plan Generator
+   * Routes through backend Gemini structured generation
+   */
+  async generateStudyPlan(goal, availableHoursPerWeek = 8) {
+    try {
+      const response = await apiClient.post('/ai/study-plan', {
+        goal,
+        availableHoursPerWeek,
+      });
+      return response.data?.data || response.data;
+    } catch (error) {
+      const status = error.response?.status || 503;
+      const code = error.response?.data?.code || 'AI_SERVICE_UNAVAILABLE';
+      const message = error.response?.data?.message || 'Study plan generator is temporarily unavailable.';
+
+      const err = new Error(message);
+      err.status = status;
+      err.code = code;
+      throw err;
+    }
+  }
+
+  /**
+   * Diagnostic Weak Topic Recovery Plan
+   */
+  async generateWeakTopicPlan({ recentErrors = [], targetTopics = [] }) {
+    try {
+      const response = await apiClient.post('/ai/weak-topic-plan', {
+        recentErrors,
+        targetTopics,
+      });
+      return response.data?.data || response.data;
+    } catch (error) {
+      const status = error.response?.status || 503;
+      const code = error.response?.data?.code || 'AI_SERVICE_UNAVAILABLE';
+      const message = error.response?.data?.message || 'Weak topic recovery planner is temporarily unavailable.';
+
+      const err = new Error(message);
+      err.status = status;
+      err.code = code;
+      throw err;
+    }
+  }
+
+  /**
+   * Multimodal File / Document Analysis
+   */
+  async analyzeDocument(file, prompt) {
+    const formData = new FormData();
+    formData.append('file', file);
+    if (prompt) formData.append('prompt', prompt);
+
+    try {
+      const response = await apiClient.post('/ai/analyze-document', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+      return response.data?.data || response.data;
+    } catch (error) {
+      const status = error.response?.status || 503;
+      const code = error.response?.data?.code || 'AI_SERVICE_UNAVAILABLE';
+      const message = error.response?.data?.message || 'Document analysis is temporarily unavailable.';
+
+      const err = new Error(message);
+      err.status = status;
+      err.code = code;
+      throw err;
+    }
+  }
+
+  /**
+   * Check Genuine Vision & Multimodal Capabilities
+   */
+  async getVisionStatus() {
+    try {
+      const response = await apiClient.get('/ai/vision-status');
+      return response.data?.data || response.data;
+    } catch (error) {
+      return { isAvailable: false, status: 'UNAVAILABLE' };
+    }
   }
 }
 

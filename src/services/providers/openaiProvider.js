@@ -1,42 +1,39 @@
-// OpenAI Provider Integration for Sage AI Tutor
+/**
+ * Secure AI Provider Proxy (src/services/providers/openaiProvider.js)
+ * 
+ * SECURITY COMPLIANCE (PHASE 7):
+ * - Direct browser-side calls to external AI APIs (OpenAI/Anthropic/Google) are prohibited.
+ * - Private API keys are never exposed in browser bundles or client environment variables.
+ * - All AI inference requests are securely routed through the authenticated backend gateway (/api/ai/chat).
+ */
 
-export const callOpenAIAPI = async (prompt, systemInstruction = '', apiKey = '') => {
-  const key = apiKey || process.env.REACT_APP_OPENAI_API_KEY;
-  if (!key) {
-    throw new Error('OpenAI API Key missing');
+import apiClient from '../../lib/apiClient';
+
+export const callOpenAIAPI = async (prompt, systemInstruction = '') => {
+  try {
+    const response = await apiClient.post('/ai/chat', {
+      message: prompt,
+      metadata: {
+        systemInstruction: systemInstruction || undefined,
+        proxyChannel: 'openai_legacy_adapter',
+      },
+    });
+
+    const reply = response.data?.reply || response.data?.data?.reply || response.data?.text;
+    if (reply) {
+      return reply;
+    }
+
+    throw new Error('No response returned from backend AI gateway');
+  } catch (err) {
+    const errorMsg = err.response?.data?.message || err.message || 'AI service request failed';
+    const status = err.response?.status || 500;
+    
+    const secureError = new Error(`[Secure AI Gateway] (${status}): ${errorMsg}`);
+    secureError.status = status;
+    secureError.code = err.response?.data?.code || 'AI_SERVICE_ERROR';
+    throw secureError;
   }
-
-  const model = process.env.REACT_APP_OPENAI_MODEL || 'gpt-4o-mini';
-  const url = 'https://api.openai.com/v1/chat/completions';
-
-  const messages = [];
-  if (systemInstruction) {
-    messages.push({ role: 'system', content: systemInstruction });
-  }
-  messages.push({ role: 'user', content: prompt });
-
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${key}`
-    },
-    body: JSON.stringify({
-      model,
-      messages,
-      temperature: 0.3
-    })
-  });
-
-  if (!response.ok) {
-    const errText = await response.text();
-    throw new Error(`OpenAI API Error: ${response.status} - ${errText}`);
-  }
-
-  const data = await response.json();
-  if (data.choices && data.choices[0]?.message?.content) {
-    return data.choices[0].message.content;
-  }
-
-  throw new Error('Invalid response structure from OpenAI API');
 };
+
+export default { callOpenAIAPI };

@@ -32,7 +32,7 @@ function registerChatEvents(io, socket) {
       }
 
       // Verify that this user is an authorized member of the conversation
-      const membership = await prisma.conversationMember.findUnique({
+      let membership = await prisma.conversationMember.findUnique({
         where: {
           conversationId_userId: {
             conversationId,
@@ -40,6 +40,15 @@ function registerChatEvents(io, socket) {
           },
         },
       });
+
+      if (!membership) {
+        const conv = await prisma.conversation.findUnique({ where: { id: conversationId } });
+        if (conv && conv.type === 'COMMUNITY') {
+          membership = await prisma.conversationMember.create({
+            data: { conversationId, userId: user.id, role: 'MEMBER' },
+          });
+        }
+      }
 
       if (!membership) {
         if (typeof callback === 'function') {
@@ -63,7 +72,7 @@ function registerChatEvents(io, socket) {
         data: {
           lastReadAt: now,
         },
-      });
+      }).catch(() => {});
 
       // Broadcast read receipt to room
       socket.to(roomName).emit('conversation:read', {
@@ -111,7 +120,7 @@ function registerChatEvents(io, socket) {
    */
   socket.on('send:message', async (data, callback) => {
     try {
-      const { conversationId, content, messageType = 'TEXT', fileUrl = null } = data || {};
+      const { conversationId, content, text, messageType = 'TEXT', fileUrl = null, attachment = null, replyToId = null } = data || {};
 
       if (!conversationId) {
         if (typeof callback === 'function') {
@@ -120,14 +129,15 @@ function registerChatEvents(io, socket) {
         return;
       }
 
-      if (!content || typeof content !== 'string' || content.trim().length === 0) {
+      const rawContent = (content || text || attachment?.name || '').trim();
+      if (!rawContent && !fileUrl && !attachment) {
         if (typeof callback === 'function') {
           return callback({ success: false, message: 'Message content cannot be empty' });
         }
         return;
       }
 
-      if (content.length > 5000) {
+      if (rawContent.length > 5000) {
         if (typeof callback === 'function') {
           return callback({ success: false, message: 'Message exceeds maximum limit of 5,000 characters' });
         }
@@ -137,8 +147,8 @@ function registerChatEvents(io, socket) {
       const validTypes = ['TEXT', 'CODE', 'FILE'];
       const sanitizedType = validTypes.includes(messageType) ? messageType : 'TEXT';
 
-      // 1. Verify membership
-      const membership = await prisma.conversationMember.findUnique({
+      // 1. Verify membership (auto-enroll for community channels)
+      let membership = await prisma.conversationMember.findUnique({
         where: {
           conversationId_userId: {
             conversationId,
@@ -146,6 +156,15 @@ function registerChatEvents(io, socket) {
           },
         },
       });
+
+      if (!membership) {
+        const conv = await prisma.conversation.findUnique({ where: { id: conversationId } });
+        if (conv && conv.type === 'COMMUNITY') {
+          membership = await prisma.conversationMember.create({
+            data: { conversationId, userId: user.id, role: 'MEMBER' },
+          });
+        }
+      }
 
       if (!membership) {
         if (typeof callback === 'function') {
@@ -160,9 +179,11 @@ function registerChatEvents(io, socket) {
           data: {
             conversationId,
             senderId: user.id,
-            content: content.trim(),
+            content: rawContent,
             messageType: sanitizedType,
             fileUrl,
+            attachment: attachment ? JSON.parse(JSON.stringify(attachment)) : null,
+            replyToId,
           },
           include: {
             sender: {
@@ -193,10 +214,31 @@ function registerChatEvents(io, socket) {
         }),
       ]);
 
+      const date = new Date(message.createdAt);
+      const formattedMessage = {
+        id: message.id,
+        conversationId: message.conversationId,
+        senderId: message.senderId,
+        senderName: message.sender?.name || user.name,
+        avatar: message.sender?.avatar || user.avatar,
+        sender: message.sender,
+        text: message.content,
+        content: message.content,
+        type: message.messageType.toLowerCase(),
+        messageType: message.messageType,
+        fileUrl: message.fileUrl,
+        attachment: message.attachment,
+        replyToId: message.replyToId,
+        reactions: message.reactions || {},
+        isPinned: message.isPinned,
+        createdAt: message.createdAt,
+        timestamp: date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      };
+
       const roomName = `conversation:${conversationId}`;
 
       // 3. Broadcast to all sockets currently in the conversation room
-      io.to(roomName).emit('message:received', message);
+      io.to(roomName).emit('message:received', formattedMessage);
 
       // 4. Query other members of the conversation to emit targeted push notifications
       const otherMembers = await prisma.conversationMember.findMany({
@@ -213,7 +255,7 @@ function registerChatEvents(io, socket) {
       otherMembers.forEach((member) => {
         io.to(`user:${member.userId}`).emit('notification:new_message', {
           conversationId,
-          message,
+          message: formattedMessage,
           sender: {
             id: user.id,
             name: user.name,
@@ -223,7 +265,7 @@ function registerChatEvents(io, socket) {
       });
 
       if (typeof callback === 'function') {
-        callback({ success: true, message });
+        callback({ success: true, message: formattedMessage });
       }
     } catch (error) {
       console.error('[Socket Chat] send:message error:', error);
@@ -262,6 +304,92 @@ function registerChatEvents(io, socket) {
       conversationId,
       userId: user.id,
     });
+  });
+
+  /**
+   * Event: reaction:toggle
+   */
+  socket.on('reaction:toggle', async (data, callback) => {
+    try {
+      const { messageId, reaction = '👍' } = data || {};
+      if (!messageId) return;
+
+      const message = await prisma.chatMessage.findUnique({
+        where: { id: messageId },
+      });
+      if (!message) return;
+
+      const reactions = (message.reactions && typeof message.reactions === 'object')
+        ? { ...message.reactions }
+        : {};
+
+      const currentList = Array.isArray(reactions[reaction]) ? [...reactions[reaction]] : [];
+      const idx = currentList.indexOf(user.id);
+      if (idx > -1) {
+        currentList.splice(idx, 1);
+      } else {
+        currentList.push(user.id);
+      }
+
+      if (currentList.length > 0) {
+        reactions[reaction] = currentList;
+      } else {
+        delete reactions[reaction];
+      }
+
+      const updated = await prisma.chatMessage.update({
+        where: { id: messageId },
+        data: { reactions },
+      });
+
+      io.to(`conversation:${message.conversationId}`).emit('message:reaction', {
+        messageId,
+        conversationId: message.conversationId,
+        reactions: updated.reactions,
+      });
+
+      if (typeof callback === 'function') {
+        callback({ success: true, reactions: updated.reactions });
+      }
+    } catch (err) {
+      console.error('[Socket Chat] reaction:toggle error:', err);
+    }
+  });
+
+  /**
+   * Event: pin:toggle
+   */
+  socket.on('pin:toggle', async (data, callback) => {
+    try {
+      const { messageId } = data || {};
+      if (!messageId) return;
+
+      const message = await prisma.chatMessage.findUnique({
+        where: { id: messageId },
+        include: { conversation: { include: { members: true } } },
+      });
+      if (!message) return;
+
+      const isMember = message.conversation.members.some((m) => m.userId === user.id);
+      if (!isMember) return;
+
+      const updated = await prisma.chatMessage.update({
+        where: { id: messageId },
+        data: { isPinned: !message.isPinned },
+      });
+
+      io.to(`conversation:${message.conversationId}`).emit('message:pinned', {
+        messageId,
+        conversationId: message.conversationId,
+        isPinned: updated.isPinned,
+      });
+
+      if (typeof callback === 'function') {
+        callback({ success: true, isPinned: updated.isPinned });
+      }
+    } catch (err) {
+      console.error('[Socket Chat] pin:toggle error:', err);
+    }
   });
 }
 

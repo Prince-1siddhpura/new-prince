@@ -3,6 +3,8 @@
  * High-performance game engine content provider, score tracker, and gamification connector.
  */
 
+import { gameApi } from '../lib/apiClient';
+
 const RESULTS_KEY = 'edunova_game_results_v1';
 const BESTS_KEY = 'edunova_game_bests_v1';
 
@@ -136,7 +138,16 @@ const GAME_CONTENT = {
 import { gamificationApi } from '../lib/apiClient';
 
 class GameService {
-  getResults() {
+  async getResults() {
+    try {
+      const res = await gameApi.getResults();
+      if (res && res.data) {
+        localStorage.setItem(RESULTS_KEY, JSON.stringify(res.data));
+        return res.data;
+      }
+    } catch (err) {
+      console.warn('Failed to fetch game results from backend, falling back to cache:', err.message);
+    }
     try {
       const data = localStorage.getItem(RESULTS_KEY);
       return data ? JSON.parse(data) : [];
@@ -145,7 +156,16 @@ class GameService {
     }
   }
 
-  getPersonalBests() {
+  async getPersonalBests() {
+    try {
+      const res = await gameApi.getPersonalBests();
+      if (res && res.data) {
+        localStorage.setItem(BESTS_KEY, JSON.stringify(res.data));
+        return res.data;
+      }
+    } catch (err) {
+      console.warn('Failed to fetch personal bests from backend, falling back to cache:', err.message);
+    }
     try {
       const data = localStorage.getItem(BESTS_KEY);
       return data ? JSON.parse(data) : {
@@ -159,10 +179,8 @@ class GameService {
     }
   }
 
-  saveGameResult(result) {
-    const results = this.getResults();
-    const newEntry = {
-      id: `game-res-${Date.now()}`,
+  async saveGameResult(result) {
+    const payload = {
       gameId: result.gameId,
       gameTitle: result.gameTitle,
       subject: result.subject || 'General',
@@ -170,28 +188,51 @@ class GameService {
       accuracy: result.accuracy || 0,
       xpEarned: result.xpEarned || 50,
       durationSeconds: result.durationSeconds || 45,
-      mistakes: result.mistakes || [],
+      mistakes: result.mistakes || []
+    };
+
+    let serverRecord = null;
+    try {
+      const res = await gameApi.recordResult(payload);
+      if (res && res.data) {
+        serverRecord = res.data;
+      }
+    } catch (err) {
+      console.warn('Could not save game result to backend, caching locally:', err.message);
+    }
+
+    const newEntry = serverRecord || {
+      id: `game-res-${Date.now()}`,
+      ...payload,
       timestamp: new Date().toISOString()
     };
 
-    results.unshift(newEntry);
-    localStorage.setItem(RESULTS_KEY, JSON.stringify(results));
+    // Update local cache
+    try {
+      const cached = localStorage.getItem(RESULTS_KEY);
+      const list = cached ? JSON.parse(cached) : [];
+      list.unshift(newEntry);
+      localStorage.setItem(RESULTS_KEY, JSON.stringify(list));
 
-    // Award genuine XP into PostgreSQL backend
-    if (newEntry.xpEarned > 0) {
-      gamificationApi.addXp(newEntry.xpEarned, `Learning Game: ${newEntry.gameTitle} (${newEntry.score} pts)`).catch(err => {
-        console.warn('Could not credit game XP to backend:', err.message);
-      });
+      const bests = this.getPersonalBestsSync();
+      bests.totalGames = (bests.totalGames || 0) + 1;
+      if (newEntry.score > bests.highScore) bests.highScore = newEntry.score;
+      if (newEntry.accuracy > bests.highestAccuracy) bests.highestAccuracy = newEntry.accuracy;
+      localStorage.setItem(BESTS_KEY, JSON.stringify(bests));
+    } catch (e) {
+      // ignore
     }
 
-    // Update Personal Bests
-    const bests = this.getPersonalBests();
-    bests.totalGames = (bests.totalGames || 0) + 1;
-    if (newEntry.score > bests.highScore) bests.highScore = newEntry.score;
-    if (newEntry.accuracy > bests.highestAccuracy) bests.highestAccuracy = newEntry.accuracy;
-
-    localStorage.setItem(BESTS_KEY, JSON.stringify(bests));
     return newEntry;
+  }
+
+  getPersonalBestsSync() {
+    try {
+      const data = localStorage.getItem(BESTS_KEY);
+      return data ? JSON.parse(data) : { highScore: 0, highestAccuracy: 0, totalGames: 0, currentStreak: 1 };
+    } catch (e) {
+      return { highScore: 0, highestAccuracy: 0, totalGames: 0, currentStreak: 1 };
+    }
   }
 
   getContentForTrack(track = 'SCHOOL', subject = 'Physics') {

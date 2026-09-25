@@ -36,11 +36,11 @@ export const SettingsPage = () => {
   const [toastNotice, setToastNotice] = useState('');
 
   // Editable Profile States
-  const [name, setName] = useState(user?.name || learner?.name || 'Priya Nair');
-  const [username, setUsername] = useState(learner?.username || user?.username || 'priya_nair_gate');
-  const [email, setEmail] = useState(user?.email || learner?.email || 'priya.nair@edunova.app');
-  const [dob, setDob] = useState(learner?.dob || '2004-08-15');
-  const phone = learner?.phone || user?.phone || '+91 98765 43210'; // READ-ONLY as required by prompt rules 4 & 8!
+  const [name, setName] = useState(user?.name || learner?.name || user?.email?.split('@')[0] || 'Learner');
+  const [username, setUsername] = useState(learner?.username || user?.username || user?.email?.split('@')[0] || 'learner');
+  const [email, setEmail] = useState(user?.email || learner?.email || '');
+  const [dob, setDob] = useState(learner?.dob || '');
+  const phone = learner?.phone || user?.phone || 'Not configured'; // READ-ONLY
 
   // Modals visibility state
   const [isNameModalOpen, setIsNameModalOpen] = useState(false);
@@ -295,8 +295,8 @@ export const SettingsPage = () => {
         subtitle="Configure account security, curriculum subjects, notifications, accessibility, and Sage AI preferences."
         stats={[
           { label: `${setupHealth}%`, subtext: 'Setup Health', icon: CheckSquare, color: '#38bdf8', iconBg: 'rgba(56, 189, 248, 0.25)' },
-          { label: 'Active', subtext: 'Theme: Dark', icon: Palette, color: '#c084fc', iconBg: 'rgba(192, 132, 252, 0.25)' },
-          { label: '3', subtext: 'Learning Goals', isPill: true }
+          { label: theme === 'dark' ? 'Dark' : 'Light', subtext: 'Active Theme', icon: Palette, color: '#c084fc', iconBg: 'rgba(192, 132, 252, 0.25)' },
+          { label: `${selectedSubjects?.length || 0}`, subtext: 'Active Subjects', icon: BookOpen, color: '#34d399', iconBg: 'rgba(52, 211, 153, 0.25)' }
         ]}
       />
 

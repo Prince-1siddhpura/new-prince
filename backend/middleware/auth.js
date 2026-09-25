@@ -124,4 +124,46 @@ const requireRole = (...roles) => {
   };
 };
 
-module.exports = { requireAuth, requireRole };
+/**
+ * optionalAuth — Validates token if present and attaches `req.user`, but continues if no token.
+ */
+const optionalAuth = async (req, res, next) => {
+  let token = null;
+  if (req.cookies && req.cookies.edunova_token) {
+    token = req.cookies.edunova_token;
+  }
+  if (!token && req.headers.authorization && req.headers.authorization.startsWith('Bearer ')) {
+    token = req.headers.authorization.split(' ')[1];
+  }
+
+  if (!token) {
+    return next();
+  }
+
+  try {
+    const decoded = jwt.verify(token, process.env.JWT_SECRET, { algorithms: ['HS256'] });
+    const user = await prisma.user.findUnique({
+      where: { id: decoded.id },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        role: true,
+        learnerType: true,
+        avatar: true,
+        studentUsername: true,
+        tokenVersion: true,
+      },
+    });
+
+    if (user && decoded.tokenVersion === user.tokenVersion) {
+      req.user = user;
+    }
+  } catch (e) {
+    // Optional auth silently continues as guest
+  }
+
+  next();
+};
+
+module.exports = { requireAuth, requireRole, optionalAuth };

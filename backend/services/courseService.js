@@ -12,14 +12,14 @@ const getCourses = async ({ category, difficulty, search, instructorId, isPublis
   if (isPublished !== undefined) where.isPublished = isPublished;
   else where.isPublished = true; // Default: only published
 
-  if (category) where.category = { contains: category };
+  if (category) where.category = { contains: category, mode: 'insensitive' };
   if (difficulty) where.difficulty = difficulty;
   if (instructorId) where.instructorId = instructorId;
   if (search) {
     where.OR = [
-      { title: { contains: search } },
-      { description: { contains: search } },
-      { category: { contains: search } },
+      { title: { contains: search, mode: 'insensitive' } },
+      { description: { contains: search, mode: 'insensitive' } },
+      { category: { contains: search, mode: 'insensitive' } },
     ];
   }
 
@@ -201,7 +201,17 @@ const getEnrolledCourses = async (userId) => {
 /**
  * Add module to a course
  */
-const addModule = async (courseId, { title, duration, order }) => {
+const addModule = async (courseId, { title, duration, order }, userId) => {
+  const existing = await prisma.course.findUnique({ where: { id: courseId } });
+  if (!existing) throw { status: 404, message: 'Course not found' };
+
+  if (userId) {
+    const user = await prisma.user.findUnique({ where: { id: userId } });
+    if (existing.instructorId !== userId && user?.role !== 'ADMIN') {
+      throw { status: 403, message: 'Not authorized to add modules to this course' };
+    }
+  }
+
   if (!order) {
     const maxModule = await prisma.courseModule.findFirst({
       where: { courseId },

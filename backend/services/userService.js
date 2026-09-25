@@ -125,8 +125,8 @@ const getAllUsers = async ({ role, learnerType, search, page = 1, limit = 20 }) 
   if (learnerType) where.learnerType = learnerType;
   if (search) {
     where.OR = [
-      { name: { contains: search } },
-      { email: { contains: search } },
+      { name: { contains: search, mode: 'insensitive' } },
+      { email: { contains: search, mode: 'insensitive' } },
     ];
   }
 

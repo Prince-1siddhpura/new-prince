@@ -42,7 +42,7 @@ export const GameCenterPage = () => {
   const { user } = useAuth() || {};
 
   const [activeTrack, setActiveTrack] = useState('SCHOOL');
-  const [bests, setBests] = useState({ highScore: 0, highestAccuracy: 0, totalGames: 0, currentStreak: 1 });
+  const [bests, setBests] = useState({ highScore: 0, highestAccuracy: 0, totalGames: 0, currentStreak: 0 });
   const [history, setHistory] = useState([]);
 
   // Active game modal state

@@ -1,9 +1,4 @@
-/**
- * EduNova User Progress & Gauge Service
- * Provides isolated, dynamic progress tracking per user ID.
- * Fresh users start at 0% across Learning, Practice, Assignments, Attendance.
- * Dynamic actions increment progress persistently in localStorage & sync via window events.
- */
+import { activityApi } from '../lib/apiClient';
 
 const STORAGE_PREFIX = 'edunova_user_progress_';
 
@@ -85,6 +80,15 @@ class UserProgressService {
     const newStudyMinutes = (current.studyMinutes || 0) + minutes;
     const achievements = Math.max(current.achievementsUnlocked, newCompleted >= 1 ? 1 : 0);
 
+    activityApi.logActivity({
+      type: 'LESSON',
+      subject: 'Learning Progress',
+      topic: 'Completed Lesson',
+      durationMinutes: minutes,
+      accuracy: 90,
+      xpEarned: 50
+    }).catch(err => console.warn('Could not log activity to server:', err.message));
+
     return this.saveUserProgress(userId, {
       ...current,
       completedLessons: newCompleted,
@@ -106,6 +110,15 @@ class UserProgressService {
     const newStudyMinutes = (current.studyMinutes || 0) + minutes;
     const achievements = Math.max(current.achievementsUnlocked, newQuizzes >= 1 ? 2 : 1);
 
+    activityApi.logActivity({
+      type: 'QUIZ',
+      subject: 'Practice Quiz',
+      topic: 'Completed Quiz',
+      durationMinutes: minutes,
+      accuracy: scorePercentage,
+      xpEarned: 75
+    }).catch(err => console.warn('Could not log quiz activity to server:', err.message));
+
     return this.saveUserProgress(userId, {
       ...current,
       completedQuizzes: newQuizzes,
@@ -125,6 +138,15 @@ class UserProgressService {
     const computedAssignments = Math.min(100, Math.max(current.assignments + incrementPercent, Math.round((newCompleted / current.totalAssignments) * 100)));
     const newStudyMinutes = (current.studyMinutes || 0) + minutes;
     const achievements = Math.max(current.achievementsUnlocked, newCompleted >= 1 ? 3 : 2);
+
+    activityApi.logActivity({
+      type: 'ASSIGNMENT',
+      subject: 'Assignment',
+      topic: 'Completed Assignment',
+      durationMinutes: minutes,
+      accuracy: 88,
+      xpEarned: 100
+    }).catch(err => console.warn('Could not log assignment activity to server:', err.message));
 
     return this.saveUserProgress(userId, {
       ...current,
@@ -153,6 +175,7 @@ class UserProgressService {
 
 export const progressService = new UserProgressService();
 export default progressService;
+
 
 export const getPersonalizedLearningPath = async () => {
   await new Promise((resolve) => setTimeout(resolve, 300));

@@ -44,6 +44,28 @@ class ConversationController {
   }
 
   /**
+   * POST /api/conversations/direct
+   * Start or retrieve direct conversation with a peer
+   */
+  async getOrCreateDirectConversation(req, res, next) {
+    try {
+      const { targetUserId } = req.body;
+      if (!targetUserId) {
+        return res.status(400).json({ success: false, message: 'targetUserId is required' });
+      }
+
+      const conversation = await conversationService.getOrCreateDirectConversation(req.user.id, targetUserId);
+      return res.status(201).json({
+        success: true,
+        message: 'Direct conversation initialized',
+        data: conversation,
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
    * GET /api/conversations/:id/messages
    * Cursor-based paginated chat message history
    */
@@ -77,14 +99,14 @@ class ConversationController {
    */
   async sendMessage(req, res, next) {
     try {
-      const { content, messageType, fileUrl } = req.body;
+      const { content, text, messageType, fileUrl, attachment, replyToId } = req.body;
       const message = await conversationService.sendMessage(
         req.params.id,
         req.user.id,
-        { content, messageType, fileUrl }
+        { content: content || text, messageType, fileUrl, attachment, replyToId }
       );
 
-      // Try broadcasting to active socket room if initialized
+      // Broadcast to active socket room
       try {
         const io = getIO();
         io.to(`conversation:${req.params.id}`).emit('message:received', message);
@@ -96,6 +118,63 @@ class ConversationController {
         success: true,
         message: 'Message sent successfully',
         data: message,
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * POST /api/conversations/:id/read
+   * Mark conversation as read
+   */
+  async markAsRead(req, res, next) {
+    try {
+      await conversationService.markAsRead(req.params.id, req.user.id);
+      return res.json({
+        success: true,
+        message: 'Conversation marked as read',
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * POST /api/conversations/messages/:messageId/react
+   * Toggle emoji reaction
+   */
+  async toggleReaction(req, res, next) {
+    try {
+      const { reaction } = req.body;
+      const result = await conversationService.toggleReaction(req.params.messageId, req.user.id, reaction || '👍');
+
+      try {
+        const io = getIO();
+        io.emit('message:reaction', result);
+      } catch (e) {}
+
+      return res.json({
+        success: true,
+        message: 'Reaction updated',
+        data: result,
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * POST /api/conversations/messages/:messageId/pin
+   * Toggle pin on message
+   */
+  async togglePin(req, res, next) {
+    try {
+      const result = await conversationService.togglePin(req.params.messageId, req.user.id);
+      return res.json({
+        success: true,
+        message: result.isPinned ? 'Message pinned' : 'Message unpinned',
+        data: result,
       });
     } catch (error) {
       next(error);

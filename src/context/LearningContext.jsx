@@ -62,6 +62,10 @@ export const LearningProvider = ({ children }) => {
         setStreakDays(s.streakDays ?? 0);
         setBestStreak((prev) => Math.max(prev, s.streakDays ?? 0));
 
+        if (Array.isArray(s.achievements)) {
+          setAchievements(s.achievements);
+        }
+
         if (Array.isArray(s.xpHistory)) {
           setXpTransactions(
             s.xpHistory.map((t) => ({
@@ -91,6 +95,18 @@ export const LearningProvider = ({ children }) => {
 
   useEffect(() => {
     syncGamificationState();
+
+    const handleTaskOrXpUpdate = () => {
+      syncGamificationState();
+    };
+
+    window.addEventListener('edunova_task_updated', handleTaskOrXpUpdate);
+    window.addEventListener('edunova_xp_updated', handleTaskOrXpUpdate);
+
+    return () => {
+      window.removeEventListener('edunova_task_updated', handleTaskOrXpUpdate);
+      window.removeEventListener('edunova_xp_updated', handleTaskOrXpUpdate);
+    };
   }, [syncGamificationState]);
 
   // Recalculate level info whenever XP updates

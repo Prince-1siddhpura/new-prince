@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
+import { notificationApi } from '../lib/apiClient';
 
 const NotificationContext = createContext();
 
@@ -13,13 +14,22 @@ export const NotificationProvider = ({ children }) => {
     return [];
   });
 
+  // Sync from backend database on mount
   useEffect(() => {
-    try {
-      localStorage.setItem('edunova_notifications', JSON.stringify(notifications));
-    } catch (e) {
-      console.warn('Error saving notifications', e);
-    }
-  }, [notifications]);
+    const token = localStorage.getItem('edunova_token') || localStorage.getItem('token');
+    if (!token) return;
+
+    notificationApi.getNotifications()
+      .then((res) => {
+        if (res && res.data) {
+          setNotifications(res.data);
+          localStorage.setItem('edunova_notifications', JSON.stringify(res.data));
+        }
+      })
+      .catch((err) => {
+        console.warn('Could not sync notifications from server:', err.message);
+      });
+  }, []);
 
   const unreadCount = useMemo(() => {
     return notifications.filter((n) => !n.read && n.unread !== false).length;
@@ -29,12 +39,18 @@ export const NotificationProvider = ({ children }) => {
     setNotifications((prev) =>
       prev.map((n) => (n.id === id ? { ...n, read: true, unread: false } : n))
     );
+    notificationApi.markRead(id).catch((err) => {
+      console.warn('Failed to mark notification read on server:', err.message);
+    });
   }, []);
 
   const markAllAsRead = useCallback(() => {
     setNotifications((prev) =>
       prev.map((n) => ({ ...n, read: true, unread: false }))
     );
+    notificationApi.markAllRead().catch((err) => {
+      console.warn('Failed to mark all notifications read on server:', err.message);
+    });
   }, []);
 
   const addNotification = useCallback((notif) => {
@@ -48,7 +64,19 @@ export const NotificationProvider = ({ children }) => {
       ...notif
     };
     setNotifications((prev) => [newNotif, ...prev]);
+
+    // Async persist to PostgreSQL
+    notificationApi.create({
+      title: notif.title || 'Notification',
+      message: notif.message || '',
+      type: notif.type || 'SYSTEM',
+      accent: notif.accent || '#06b6d4',
+      link: notif.link || null
+    }).catch((err) => {
+      console.warn('Failed to save notification on server:', err.message);
+    });
   }, []);
+
 
   const contextValue = useMemo(() => ({
     notifications,

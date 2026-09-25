@@ -104,14 +104,16 @@ const processQueue = (error, token = null) => {
   failedQueue = [];
 };
 
-const clearSessionAndRedirect = () => {
+const clearSessionAndRedirect = (notifyUser = true) => {
   if (typeof window === 'undefined') return;
+
+  const hadSession = !!localStorage.getItem('edunova_token') || !!localStorage.getItem('edunova_refresh_token');
 
   localStorage.removeItem('edunova_token');
   localStorage.removeItem('edunova_refresh_token');
   localStorage.removeItem('edunova_user');
 
-  if (!window.location.pathname.includes('/login')) {
+  if (hadSession && notifyUser && !window.location.pathname.includes('/login')) {
     showToast('Your session has expired. Please sign in again.', 'error');
     window.location.href = '/login';
   }
@@ -162,13 +164,22 @@ export async function apiClient(endpoint, options = {}, isRetry = false) {
       if (!fallbackSuccess) throw netErr;
     }
 
+    const isAuthRoute =
+      endpoint.includes('/auth/login') ||
+      endpoint.includes('/auth/refresh') ||
+      endpoint.includes('/auth/google') ||
+      endpoint.includes('/auth/register') ||
+      endpoint === '/auth/me' ||
+      endpoint.startsWith('/auth/verify-') ||
+      endpoint.startsWith('/auth/password-reset');
+
+    // Silent handling for initial /auth/me check when unauthenticated
+    if (response.status === 401 && endpoint === '/auth/me') {
+      return { success: false, data: null, message: 'Unauthenticated' };
+    }
+
     // ── 401 Interceptor: Auto-Refresh Access Token or Dispatch Session Expiry ──
-    if (
-      response.status === 401 &&
-      !isRetry &&
-      !endpoint.includes('/auth/login') &&
-      !endpoint.includes('/auth/refresh')
-    ) {
+    if (response.status === 401 && !isRetry && !isAuthRoute) {
       if (typeof window !== 'undefined') {
         window.dispatchEvent(
           new CustomEvent('edunova:unauthorized', {
@@ -183,7 +194,7 @@ export async function apiClient(endpoint, options = {}, isRetry = false) {
       if (!refreshToken) {
         const sessionError = new Error('Session expired');
         processQueue(sessionError);
-        clearSessionAndRedirect();
+        clearSessionAndRedirect(true);
         throw sessionError;
       }
 
@@ -430,6 +441,25 @@ export const courseApi = {
 };
 
 /**
+ * C2. Progress Tracking Module (`/api/progress`)
+ */
+export const progressApi = {
+  getDashboardProgress: () => apiClient('/progress/dashboard'),
+  getSubjectProgress: () => apiClient('/progress/subjects'),
+  updateSubjectProgress: (subjectId, data) =>
+    apiClient(`/progress/subjects/${subjectId}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
+  getCourseProgress: () => apiClient('/progress/courses'),
+  updateCourseProgress: (courseId, data) =>
+    apiClient(`/progress/courses/${courseId}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
+};
+
+/**
  * D. Gamification & Progression Module (`/api/gamification`)
  */
 export const gamificationApi = {
@@ -461,6 +491,9 @@ export const gamificationApi = {
 
   getLeaderboard: (limit = 20) =>
     apiClient(`/gamification/leaderboard?limit=${limit}`),
+
+  getAchievements: () =>
+    apiClient('/gamification/achievements'),
 };
 
 /**
@@ -524,17 +557,35 @@ export const adminApi = {
  * F. Parent Companion Module (`/api/parents`)
  */
 export const parentApi = {
-  getChildOverview: () => apiClient('/parents/child-overview'),
+  getChildOverview: (studentUsername) =>
+    apiClient(`/parents/child-overview${studentUsername ? `?studentUsername=${encodeURIComponent(studentUsername)}` : ''}`),
+  getChildProfile: (studentUsername) =>
+    apiClient(`/parents/child-profile${studentUsername ? `?studentUsername=${encodeURIComponent(studentUsername)}` : ''}`),
+  getChildren: () => apiClient('/parents/children'),
   linkStudent: (studentUsername, linkCode) =>
     apiClient('/parents/link-student', {
       method: 'POST',
       body: JSON.stringify({ studentUsername, linkCode }),
     }),
-  unlinkStudent: () =>
+  unlinkStudent: (studentUsername) =>
     apiClient('/parents/unlink-student', {
       method: 'POST',
+      body: JSON.stringify({ studentUsername }),
     }),
+  getCompanionConfig: () => apiClient('/parents/companion-config'),
+  saveCompanionConfig: (data) =>
+    apiClient('/parents/companion-config', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  linkChild: (data) =>
+    apiClient('/parents/link-child', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  getChildAnalytics: (childId) => apiClient(`/parents/child/${childId}/analytics`),
 };
+
 
 /**
  * G. Realtime Conversation & Chat Module (`/api/conversations`)
@@ -568,6 +619,13 @@ export const exchangeApi = {
   getMarketplace: () => apiClient('/skills/marketplace'),
 
   getExchange: (id) => apiClient(`/exchanges/${id}`),
+  getExchangeById: (id) => apiClient(`/exchanges/${id}`),
+
+  createExchange: (data) =>
+    apiClient('/exchanges', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
 
   createExchangeRequest: (payload) =>
     apiClient('/exchanges/request', {
@@ -586,7 +644,42 @@ export const exchangeApi = {
       method: 'PATCH',
       body: JSON.stringify({ status }),
     }),
+
+  getMeetings: (exchangeId) => {
+    const q = exchangeId ? `?exchangeId=${exchangeId}` : '';
+    return apiClient(`/exchanges/meetings${q}`);
+  },
+
+  scheduleMeeting: (data) =>
+    apiClient('/exchanges/meetings', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+
+  updateMeetingStatus: (id, status) =>
+    apiClient(`/exchanges/meetings/${id}/status`, {
+      method: 'PATCH',
+      body: JSON.stringify({ status }),
+    }),
+
+  getGoals: (exchangeId) => {
+    const q = exchangeId ? `?exchangeId=${exchangeId}` : '';
+    return apiClient(`/exchanges/goals${q}`);
+  },
+
+  createGoal: (data) =>
+    apiClient('/exchanges/goals', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+
+  updateGoalProgress: (id, progress, milestones) =>
+    apiClient(`/exchanges/goals/${id}/progress`, {
+      method: 'PATCH',
+      body: JSON.stringify({ progress, milestones }),
+    }),
 };
+
 
 /**
  * I. Sage AI Intelligence Module (`/api/ai`)
@@ -761,5 +854,252 @@ export const skillApi = {
   getMarketplace: () => apiClient('/skills/marketplace'),
 };
 
+/**
+ * O. Instructor Module (`/api/instructor`)
+ */
+export const instructorApi = {
+  getDashboard: () => apiClient('/instructor/dashboard'),
+  getCourses: (params = {}) => {
+    const query = new URLSearchParams(params).toString();
+    return apiClient(`/instructor/courses${query ? `?${query}` : ''}`);
+  },
+  createCourse: (data) =>
+    apiClient('/instructor/courses', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  updateCourse: (id, data) =>
+    apiClient(`/instructor/courses/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    }),
+  getStudents: () => apiClient('/instructor/students'),
+  getAssessments: () => apiClient('/instructor/assessments'),
+};
+
+/**
+ * P. Tasks Module (`/api/tasks`)
+ */
+export const taskApi = {
+  getTasks: (params = {}) => {
+    const query = new URLSearchParams(params).toString();
+    return apiClient(`/tasks${query ? `?${query}` : ''}`);
+  },
+  getSummary: () => apiClient('/tasks/summary'),
+  createTask: (data) =>
+    apiClient('/tasks', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  updateTask: (id, data) =>
+    apiClient(`/tasks/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    }),
+  toggleSubtask: (id, subtaskId) =>
+    apiClient(`/tasks/${id}/toggle-subtask`, {
+      method: 'PATCH',
+      body: JSON.stringify({ subtaskId }),
+    }),
+  completeTask: (id) =>
+    apiClient(`/tasks/${id}/complete`, {
+      method: 'POST',
+    }),
+  deleteTask: (id) =>
+    apiClient(`/tasks/${id}`, {
+      method: 'DELETE',
+    }),
+};
+
+/**
+ * Q. Learning Games Module (`/api/games`)
+ */
+export const gameApi = {
+  recordResult: (data) =>
+    apiClient('/games/record', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  getBests: () => apiClient('/games/bests'),
+  getHistory: (params = {}) => {
+    const query = new URLSearchParams(params).toString();
+    return apiClient(`/games/history${query ? `?${query}` : ''}`);
+  },
+  getLeaderboard: (params = {}) => {
+    const query = new URLSearchParams(params).toString();
+    return apiClient(`/games/leaderboard${query ? `?${query}` : ''}`);
+  },
+};
+
+/**
+ * R. Labs & XR Telemetry Module (`/api/labs`)
+ */
+export const labApi = {
+  recordAttempt: (data) =>
+    apiClient('/labs/attempt', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  getProgress: () => apiClient('/labs/progress'),
+  getAttempts: (params = {}) => {
+    const query = new URLSearchParams(params).toString();
+    return apiClient(`/labs/attempts${query ? `?${query}` : ''}`);
+  },
+  saveXrProgress: (data) =>
+    apiClient('/labs/xr-progress', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  getXrProgress: (modelId) => apiClient(`/labs/xr-progress/${modelId}`),
+};
+
+/**
+ * S. Learning Activities Module (`/api/activities`)
+ */
+export const activityApi = {
+  logActivity: (data) =>
+    apiClient('/activities', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  getActivities: (params = {}) => {
+    const query = new URLSearchParams(params).toString();
+    return apiClient(`/activities${query ? `?${query}` : ''}`);
+  },
+};
+
+/**
+ * T. Notifications Module (`/api/notifications`)
+ */
+export const notificationApi = {
+  getNotifications: (params = {}) => {
+    const query = new URLSearchParams(params).toString();
+    return apiClient(`/notifications${query ? `?${query}` : ''}`);
+  },
+  markRead: (id) =>
+    apiClient(`/notifications/${id}/read`, {
+      method: 'PATCH',
+    }),
+  markAllRead: () =>
+    apiClient('/notifications/read-all', {
+      method: 'POST',
+    }),
+};
+
+/**
+ * U. Materials Module (`/api/materials`)
+ */
+export const materialApi = {
+  getMaterials: (params = {}) => {
+    const query = new URLSearchParams(params).toString();
+    return apiClient(`/materials${query ? `?${query}` : ''}`);
+  },
+  createMaterial: (data) =>
+    apiClient('/materials', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  deleteMaterial: (id) =>
+    apiClient(`/materials/${id}`, {
+      method: 'DELETE',
+    }),
+};
+
+/**
+ * V. Homework Module (`/api/homework`)
+ */
+export const homeworkApi = {
+  getHomework: () => apiClient('/homework'),
+  createHomework: (data) =>
+    apiClient('/homework', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  updateHomework: (id, data) =>
+    apiClient(`/homework/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    }),
+  deleteHomework: (id) =>
+    apiClient(`/homework/${id}`, {
+      method: 'DELETE',
+    }),
+};
+
+/**
+ * W. Community Module (`/api/community`)
+ */
+export const communityApi = {
+  getPosts: (params = {}) => {
+    const query = new URLSearchParams(params).toString();
+    return apiClient(`/community/posts${query ? `?${query}` : ''}`);
+  },
+  getPost: (id) => apiClient(`/community/posts/${id}`),
+  createPost: (data) =>
+    apiClient('/community/posts', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  toggleLike: (id) =>
+    apiClient(`/community/posts/${id}/like`, {
+      method: 'POST',
+    }),
+  addComment: (id, content) =>
+    apiClient(`/community/posts/${id}/comments`, {
+      method: 'POST',
+      body: JSON.stringify({ content }),
+    }),
+  acceptAnswer: (id, commentId) =>
+    apiClient(`/community/posts/${id}/accept-answer`, {
+      method: 'POST',
+      body: JSON.stringify({ commentId }),
+    }),
+  deletePost: (id) =>
+    apiClient(`/community/posts/${id}`, {
+      method: 'DELETE',
+    }),
+  togglePin: (id) =>
+    apiClient(`/community/posts/${id}/pin`, {
+      method: 'PATCH',
+    }),
+};
+
+/**
+ * X. Conversations & Messaging Module (`/api/conversations`)
+ */
+export const chatApi = {
+  getConversations: () => apiClient('/conversations'),
+  getConversation: (id) => apiClient(`/conversations/${id}`),
+  createDirectConversation: (targetUserId) =>
+    apiClient('/conversations/direct', {
+      method: 'POST',
+      body: JSON.stringify({ targetUserId }),
+    }),
+  getMessages: (conversationId, params = {}) => {
+    const query = new URLSearchParams(params).toString();
+    return apiClient(`/conversations/${conversationId}/messages${query ? `?${query}` : ''}`);
+  },
+  sendMessage: (conversationId, data) =>
+    apiClient(`/conversations/${conversationId}/messages`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  markAsRead: (conversationId) =>
+    apiClient(`/conversations/${conversationId}/read`, {
+      method: 'POST',
+    }),
+  toggleReaction: (messageId, reaction) =>
+    apiClient(`/conversations/messages/${messageId}/react`, {
+      method: 'POST',
+      body: JSON.stringify({ reaction }),
+    }),
+  togglePin: (messageId) =>
+    apiClient(`/conversations/messages/${messageId}/pin`, {
+      method: 'POST',
+    }),
+};
+
 export default apiClient;
+
+
 

@@ -46,9 +46,9 @@ export const AnalyticsHeader = ({
         title="Learning Intelligence Center"
         subtitle="Understand your learning patterns, discover weak areas, measure real progress, and let Sage AI help you improve."
         stats={[
-          { label: '84% Score', subtext: 'Learning Health', icon: TrendingUp, color: '#38bdf8', iconBg: 'rgba(56, 189, 248, 0.25)' },
-          { label: 'Level 4', subtext: 'XP Rank', icon: Sparkles, color: '#c084fc', iconBg: 'rgba(192, 132, 252, 0.25)' },
-          { label: '3', subtext: 'Learning Goals', isPill: true }
+          { label: 'Intelligence', subtext: 'Continuous Tracking', icon: TrendingUp, color: '#38bdf8', iconBg: 'rgba(56, 189, 248, 0.25)' },
+          { label: 'Real-time', subtext: 'Database Analytics', icon: Sparkles, color: '#c084fc', iconBg: 'rgba(192, 132, 252, 0.25)' },
+          { label: 'Adaptive', subtext: 'Target Metrics', icon: Target, color: '#10b981', iconBg: 'rgba(16, 185, 129, 0.25)' }
         ]}
       />
 

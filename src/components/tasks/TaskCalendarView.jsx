@@ -39,7 +39,7 @@ export const TaskCalendarView = ({ tasks = [], onSelectTask }) => {
   const getTasksForDay = (day) => {
     if (!day) return [];
     const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-    return tasks.filter(t => t.dueDate === dateStr);
+    return tasks.filter(t => t.dueDate && (t.dueDate === dateStr || t.dueDate.split('T')[0] === dateStr));
   };
 
   return (

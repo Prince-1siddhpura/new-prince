@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { X, Plus, Trash2, Calendar, Clock, Tag, Sparkles, AlertCircle } from 'lucide-react';
 import { useTheme } from '../../context/ThemeContext';
 
@@ -6,21 +6,51 @@ export const CreateTaskModal = ({ isOpen, onClose, onSave, initialData = null })
   const { theme } = useTheme() || {};
   const isLight = theme === 'light';
 
-  const [title, setTitle] = useState(initialData?.title || '');
-  const [description, setDescription] = useState(initialData?.description || '');
-  const [subject, setSubject] = useState(initialData?.subject || 'Physics (Science)');
-  const [topic, setTopic] = useState(initialData?.topic || '');
-  const [type, setType] = useState(initialData?.type || 'Study');
-  const [priority, setPriority] = useState(initialData?.priority || 'MEDIUM');
-  const [dueDate, setDueDate] = useState(initialData?.dueDate || new Date().toISOString().split('T')[0]);
-  const [estimatedDuration, setEstimatedDuration] = useState(initialData?.estimatedDuration || 30);
-  const [difficulty, setDifficulty] = useState(initialData?.difficulty || 'Medium');
-  const [isImportant, setIsImportant] = useState(initialData?.isImportant || false);
-  const [notes, setNotes] = useState(initialData?.notes || '');
+  const [title, setTitle] = useState('');
+  const [description, setDescription] = useState('');
+  const [subject, setSubject] = useState('Physics (Science)');
+  const [topic, setTopic] = useState('');
+  const [type, setType] = useState('Study');
+  const [priority, setPriority] = useState('MEDIUM');
+  const [dueDate, setDueDate] = useState(new Date().toISOString().split('T')[0]);
+  const [estimatedDuration, setEstimatedDuration] = useState(30);
+  const [difficulty, setDifficulty] = useState('Medium');
+  const [isImportant, setIsImportant] = useState(false);
+  const [notes, setNotes] = useState('');
   
   // Subtasks list
-  const [subtasks, setSubtasks] = useState(initialData?.subtasks || []);
+  const [subtasks, setSubtasks] = useState([]);
   const [newSubtaskTitle, setNewSubtaskTitle] = useState('');
+
+  useEffect(() => {
+    if (initialData) {
+      setTitle(initialData.title || '');
+      setDescription(initialData.description || '');
+      setSubject(initialData.subject || 'Physics (Science)');
+      setTopic(initialData.topic || '');
+      setType(initialData.type || 'Study');
+      setPriority(initialData.priority || 'MEDIUM');
+      setDueDate(initialData.dueDate ? initialData.dueDate.split('T')[0] : new Date().toISOString().split('T')[0]);
+      setEstimatedDuration(initialData.estimatedDuration || 30);
+      setDifficulty(initialData.difficulty || 'Medium');
+      setIsImportant(Boolean(initialData.isImportant));
+      setNotes(initialData.notes || '');
+      setSubtasks(Array.isArray(initialData.subtasks) ? initialData.subtasks : []);
+    } else {
+      setTitle('');
+      setDescription('');
+      setSubject('Physics (Science)');
+      setTopic('');
+      setType('Study');
+      setPriority('MEDIUM');
+      setDueDate(new Date().toISOString().split('T')[0]);
+      setEstimatedDuration(30);
+      setDifficulty('Medium');
+      setIsImportant(false);
+      setNotes('');
+      setSubtasks([]);
+    }
+  }, [initialData, isOpen]);
 
   if (!isOpen) return null;
 

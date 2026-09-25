@@ -7,8 +7,21 @@ const subjectService = require('../services/subjectService');
  */
 const getSubjects = async (req, res) => {
   try {
-    const subjects = await subjectService.getSubjects(req.query);
-    res.json({ success: true, count: subjects.length, data: subjects });
+    const result = await subjectService.getSubjects(req.query);
+    if (result && Array.isArray(result)) {
+      return res.json({ success: true, count: result.length, data: result });
+    }
+    return res.json({
+      success: true,
+      count: result.subjects.length,
+      data: result.subjects,
+      pagination: {
+        total: result.total,
+        page: result.page,
+        limit: result.limit,
+        totalPages: result.totalPages,
+      },
+    });
   } catch (error) {
     res.status(error.status || 500).json({ success: false, message: error.message });
   }

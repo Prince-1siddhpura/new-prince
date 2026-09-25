@@ -4,6 +4,7 @@ import { Button } from '../common/Button';
 import { useLearning } from '../../context/LearningContext';
 import { useAuth } from '../../context/AuthContext';
 import { getDynamicAvatar } from '../../utils/avatarUtils';
+import { communityApi } from '../../lib/apiClient';
 
 export const CreatePostModalEnhanced = ({ isOpen, onClose, onAddPost }) => {
   const { user } = useAuth();
@@ -12,44 +13,46 @@ export const CreatePostModalEnhanced = ({ isOpen, onClose, onAddPost }) => {
   const [postType, setPostType] = useState('Question');
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
-  const [subject, setSubject] = useState('React');
-  const [topic, setTopic] = useState('Hooks');
+  const [subject, setSubject] = useState('Computer Science');
+  const [topic, setTopic] = useState('Data Structures');
   const [difficulty, setDifficulty] = useState('Intermediate');
   const [tagsInput, setTagsInput] = useState('React, Hooks, Async');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [errorMsg, setErrorMsg] = useState(null);
 
   if (!isOpen) return null;
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     if (!title.trim() || !content.trim()) return;
 
-    const authorName = user?.name || user?.username || 'EduNova User';
-    const newPost = {
-      id: `post_${Date.now()}`,
-      author: {
-        name: authorName,
-        avatar: getDynamicAvatar(user, authorName),
-        badge: 'Pro Student',
-        verified: true
-      },
-      title,
-      content,
-      subject,
-      topic,
-      difficulty,
-      qualityStatus: 'Clear',
-      tags: tagsInput.split(',').map((t) => t.trim()),
-      upvotes: 1,
-      repliesCount: 0,
-      views: 1,
-      timeAgo: 'Just now',
-      bookmarked: false,
-      acceptedAnswerId: null
-    };
+    setIsSubmitting(true);
+    setErrorMsg(null);
 
-    onAddPost(newPost);
-    earnXp(50, 'Community Question Asked', 'Community');
-    onClose();
+    try {
+      const tags = tagsInput.split(',').map((t) => t.trim()).filter(Boolean);
+      const res = await communityApi.createPost({
+        title: title.trim(),
+        content: content.trim(),
+        subject,
+        topic,
+        difficulty,
+        tags,
+      });
+
+      if (res && res.data) {
+        onAddPost(res.data);
+        earnXp(40, 'Created Community Discussion', 'Community');
+        setTitle('');
+        setContent('');
+        onClose();
+      }
+    } catch (err) {
+      console.error('[Create Post Error]', err);
+      setErrorMsg(err.message || 'Failed to publish discussion. Please check content guidelines.');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const handleSageImprove = () => {
@@ -99,6 +102,12 @@ export const CreatePostModalEnhanced = ({ isOpen, onClose, onAddPost }) => {
         <h3 style={{ fontSize: '1.4rem', fontWeight: 900, color: 'var(--text-primary)', marginBottom: '18px', display: 'flex', alignItems: 'center', gap: '10px' }}>
           <MessageSquare size={24} color="#06b6d4" /> Ask Question or Start Topic
         </h3>
+
+        {errorMsg && (
+          <div style={{ padding: '10px 14px', background: 'rgba(239, 68, 68, 0.15)', border: '1px solid rgba(239, 68, 68, 0.3)', borderRadius: 'var(--radius-md)', color: '#f87171', fontSize: '0.85rem', marginBottom: '12px' }}>
+            ⚠️ {errorMsg}
+          </div>
+        )}
 
         <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
           {/* Select Post Type */}
@@ -203,11 +212,11 @@ export const CreatePostModalEnhanced = ({ isOpen, onClose, onAddPost }) => {
 
           {/* Submit Action */}
           <div style={{ display: 'flex', gap: '12px', marginTop: '10px' }}>
-            <Button type="button" variant="outline" onClick={onClose} style={{ flex: 1 }}>
+            <Button type="button" variant="outline" onClick={onClose} style={{ flex: 1 }} disabled={isSubmitting}>
               Cancel
             </Button>
-            <Button type="submit" style={{ flex: 2 }}>
-              Publish Topic (+50 XP) <Sparkles size={16} />
+            <Button type="submit" style={{ flex: 2 }} disabled={isSubmitting}>
+              {isSubmitting ? 'Publishing...' : 'Publish Topic (+40 XP)'} <Sparkles size={16} />
             </Button>
           </div>
         </form>
